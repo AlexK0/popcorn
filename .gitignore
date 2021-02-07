@@ -1,0 +1,5 @@
+popcorn-client
+popcorn-server
+!popcorn-server/
+!popcorn-client/
+cpp-example/build/

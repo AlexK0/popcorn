@@ -1,0 +1,79 @@
+
+syntax = "proto3";
+
+option go_package = "github.com/AlexK0/popcorn/internal/api/popcorn";
+
+package popcorn;
+
+service CompilationService {
+    rpc CopyHeadersFromClientCache (CopyHeadersFromClientCacheRequest) returns (stream CopyHeadersFromClientCacheReply) {}
+    rpc CopyHeadersFromGlobalCache (CopyHeadersFromGlobalCacheRequest) returns (stream CopyHeadersFromGlobalCacheReply) {}
+    rpc CopyHeaders (CopyHeadersRequest) returns (CopyHeadersReply) {}
+
+    rpc CompileSource (CompileSourceRequest) returns (CompileSourceReply) {}
+}
+
+message ClientIdentifier {
+    string MachineID = 1;
+    string MacAddress = 2;
+    string UserName = 3;
+    int32 Pid = 4;
+}
+
+message HeaderClientMeta {
+    string FilePath = 1;
+    int64 MTime = 2;
+}
+
+message CopyHeadersFromClientCacheRequest {
+    ClientIdentifier ClientID = 1;
+    repeated HeaderClientMeta ClientHeaders = 2;
+    bool ClearEnvironmentBeforeCopy = 3;
+}
+
+message CopyHeadersFromClientCacheReply {
+    int32 MissedHeaderIndex = 1;
+    bool FullCopyRequired = 2;
+}
+
+message HeaderGlobalMeta {
+    HeaderClientMeta ClientMeta = 1;
+    string SHA256sum = 2;
+}
+
+message CopyHeadersFromGlobalCacheRequest {
+    ClientIdentifier ClientID = 1;
+    repeated HeaderGlobalMeta GlobalHeaders = 2;
+}
+
+message CopyHeadersFromGlobalCacheReply {
+    int32 MissedHeaderIndex = 1;
+}
+
+message HeaderFullData {
+    HeaderGlobalMeta GlobalMeta = 1;
+    bytes HeaderBody = 2;
+}
+
+message CopyHeadersRequest {
+    ClientIdentifier ClientID = 1;
+    repeated HeaderFullData Headers = 2;
+}
+
+message CopyHeadersReply {}
+
+message CompileSourceRequest {
+    ClientIdentifier ClientID = 1;
+    string FilePath = 2;
+    string Compiler = 3;
+    repeated string CompilerArgs = 4;
+    bytes SourceBody = 5;
+    bool ClearEnvironmentAfterBuild = 6;
+}
+
+message CompileSourceReply {
+    int32 CompilerRetCode = 1;
+    bytes CompiledSource = 2;
+    bytes CompilerStdout = 3;
+    bytes CompilerStderr = 4;
+}
