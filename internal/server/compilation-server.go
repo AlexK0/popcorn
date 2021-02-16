@@ -137,9 +137,10 @@ func (s *CompilationServer) CompileSource(ctx context.Context, in *pb.CompileSou
 	}
 
 	outFile := inFile + ".o"
-	compilerArgs := append([]string{"-isysroot", sysRootPath}, in.CompilerArgs...)
-	compilerArgs = append(compilerArgs, "-o", outFile, inFile)
+	compilerArgs := append([]string{"-isysroot", "."}, in.CompilerArgs...)
+	compilerArgs = append(compilerArgs, "-o", outFile, strings.TrimLeft(in.FilePath, "/"))
 	compilerProc := exec.Command(in.Compiler, compilerArgs...)
+	compilerProc.Dir = sysRootPath
 	var compilerStderr, compilerStdout bytes.Buffer
 	compilerProc.Stderr = &compilerStderr
 	compilerProc.Stdout = &compilerStdout
