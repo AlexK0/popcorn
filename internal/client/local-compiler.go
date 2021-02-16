@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/AlexK0/popcorn/internal/common"
 )
 
 // LocalCompiler ...
@@ -15,6 +17,8 @@ type LocalCompiler struct {
 	inFile                   string
 	outFile                  string
 	remoteCmdArgs            []string
+	dirsIquote               []string
+	dirsI                    []string
 	localCmdArgs             []string
 	RemoteCompilationAllowed bool
 }
@@ -27,6 +31,10 @@ func isSourceFile(file string) bool {
 func MakeLocalCompiler(compilerArgs []string) *LocalCompiler {
 	compiler := LocalCompiler{}
 	var remoteCompilationAllowed = true
+
+	compiler.dirsIquote = make([]string, 0, 2)
+	compiler.dirsI = make([]string, 0, 2)
+	dirsIsystem := make([]string, 0, 2)
 
 	for i := 1; i < len(compilerArgs); i++ {
 		arg := compilerArgs[i]
@@ -45,8 +53,45 @@ func MakeLocalCompiler(compilerArgs []string) *LocalCompiler {
 			} else if strings.HasPrefix(arg, "-o") {
 				compiler.outFile, _ = filepath.Abs(arg[2:])
 				continue
-			} else if strings.HasSuffix(arg, "=native") {
+			} else if strings.HasSuffix(arg, "=native") ||
+				// TODO think about it
+				strings.HasPrefix(arg, "-idirafter") || strings.HasPrefix(arg, "--sysroot") || strings.HasPrefix(arg, "-isysroot") {
 				remoteCompilationAllowed = false
+			} else if arg == "-I-" {
+				remoteCompilationAllowed = false
+			} else if arg == "-I" {
+				if i+1 < len(compilerArgs) {
+					compiler.dirsI = append(compiler.dirsI, compilerArgs[i+1])
+					i++
+					continue
+				} else {
+					remoteCompilationAllowed = false
+				}
+			} else if strings.HasPrefix(arg, "-I") {
+				compiler.dirsI = append(compiler.dirsI, arg[2:])
+				continue
+			} else if arg == "-iquote" {
+				if i+1 < len(compilerArgs) {
+					compiler.dirsIquote = append(compiler.dirsIquote, compilerArgs[i+1])
+					i++
+					continue
+				} else {
+					remoteCompilationAllowed = false
+				}
+			} else if strings.HasPrefix(arg, "-iquote") {
+				compiler.dirsIquote = append(compiler.dirsIquote, arg[7:])
+				continue
+			} else if arg == "-isystem" {
+				if i+1 < len(compilerArgs) {
+					dirsIsystem = append(dirsIsystem, compilerArgs[i+1])
+					i++
+					continue
+				} else {
+					remoteCompilationAllowed = false
+				}
+			} else if strings.HasPrefix(arg, "-isystem") {
+				dirsIsystem = append(dirsIsystem, arg[8:])
+				continue
 			}
 		} else if isSourceFile(arg) {
 			if len(compiler.inFile) != 0 {
@@ -62,21 +107,14 @@ func MakeLocalCompiler(compilerArgs []string) *LocalCompiler {
 	if len(compilerArgs) > 1 {
 		compiler.localCmdArgs = compilerArgs[1:]
 	}
+
+	compiler.dirsI = append(compiler.dirsI, dirsIsystem...)
 	compiler.RemoteCompilationAllowed = remoteCompilationAllowed && len(compiler.inFile) != 0 && strings.HasSuffix(compiler.outFile, ".o")
 	return &compiler
 }
 
-// CollectHeaders ...
-func (compiler *LocalCompiler) CollectHeaders() ([]string, error) {
-	compilerProc := exec.Command(compiler.name, append(compiler.remoteCmdArgs, compiler.inFile, "-o", "/dev/stdout", "-M")...)
-	var compilerStdout, compilerStderr bytes.Buffer
-	compilerProc.Stdout = &compilerStdout
-	compilerProc.Stderr = &compilerStderr
-	if err := compilerProc.Run(); err != nil {
-		return nil, err
-	}
-
-	scanner := bufio.NewScanner(bytes.NewReader(compilerStdout.Bytes()))
+func extractHeaders(rawOut []byte) []string {
+	scanner := bufio.NewScanner(bytes.NewReader(rawOut))
 	scanner.Split(bufio.ScanWords)
 	headersMap := make(map[string]bool)
 	for scanner.Scan() {
@@ -84,10 +122,12 @@ func (compiler *LocalCompiler) CollectHeaders() ([]string, error) {
 		if strings.HasPrefix(line, "#pragma GCC pch_preprocess") {
 			continue
 		}
+
 		if line == "\\" || isSourceFile(line) || strings.HasSuffix(line, ".o") || strings.HasSuffix(line, ".o:") {
 			continue
 		}
-		filePath, _ := filepath.Abs(line)
+		filePath, _ := filepath.EvalSymlinks(line)
+		filePath, _ = filepath.Abs(filePath)
 		headersMap[filePath] = true
 	}
 
@@ -97,7 +137,70 @@ func (compiler *LocalCompiler) CollectHeaders() ([]string, error) {
 	}
 
 	rand.Shuffle(len(headers), func(i, j int) { headers[i], headers[j] = headers[j], headers[i] })
-	return headers, nil
+	return headers
+}
+
+func (compiler *LocalCompiler) addIncludeDirsFrom(rawOut string) {
+	const (
+		dirsIquoteStart = "#include \"...\""
+		dirsIStart      = "#include <...>"
+		dirsEnd         = "End of search list"
+
+		ProcessUnknown    = 0
+		ProcessDirsIquote = 1
+		ProcessDirsI      = 2
+	)
+
+	processType := ProcessUnknown
+	for _, line := range strings.Split(string(rawOut), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, dirsIquoteStart) {
+			processType = ProcessDirsIquote
+		} else if strings.HasPrefix(line, dirsIStart) {
+			processType = ProcessDirsI
+		} else if strings.HasPrefix(line, dirsEnd) {
+			processType = ProcessUnknown
+		} else if strings.HasPrefix(line, "/") {
+			switch processType {
+			case ProcessDirsIquote:
+				compiler.dirsIquote = append(compiler.dirsIquote, line)
+			case ProcessDirsI:
+				compiler.dirsI = append(compiler.dirsI, line)
+			}
+		}
+	}
+}
+
+// MakeRemoteCmd ...
+func (compiler *LocalCompiler) MakeRemoteCmd(dirsPrefix string, extraArgs ...string) []string {
+	compiler.dirsIquote = common.NormalizePaths(compiler.dirsIquote)
+	compiler.dirsI = common.NormalizePaths(compiler.dirsI)
+
+	cmd := make([]string, 0, 2*len(compiler.dirsIquote)+2*len(compiler.dirsI)+len(compiler.remoteCmdArgs)+len(extraArgs))
+	for _, dir := range compiler.dirsIquote {
+		cmd = append(cmd, "-iquote", dirsPrefix+dir)
+	}
+	for _, dir := range compiler.dirsI {
+		cmd = append(cmd, "-I", dirsPrefix+dir)
+	}
+
+	cmd = append(cmd, compiler.remoteCmdArgs...)
+	return append(cmd, extraArgs...)
+}
+
+// CollectHeadersAndUpdateIncludeDirs ...
+func (compiler *LocalCompiler) CollectHeadersAndUpdateIncludeDirs() ([]string, error) {
+	cmd := compiler.MakeRemoteCmd("", compiler.inFile, "-o", "/dev/stdout", "-M", "-Wp,-v")
+	compilerProc := exec.Command(compiler.name, cmd...)
+	var compilerStdout, compilerStderr bytes.Buffer
+	compilerProc.Stdout = &compilerStdout
+	compilerProc.Stderr = &compilerStderr
+	if err := compilerProc.Run(); err != nil {
+		return nil, err
+	}
+
+	compiler.addIncludeDirsFrom(compilerStderr.String())
+	return extractHeaders(compilerStdout.Bytes()), nil
 }
 
 // CompileLocally ...

@@ -55,7 +55,7 @@ func tryRemoteCompilation(localCompiler *LocalCompiler, settings *Settings) (ret
 		return 0, nil, nil, ErrNoAvailableHosts
 	}
 
-	headers, err := localCompiler.CollectHeaders()
+	headers, err := localCompiler.CollectHeadersAndUpdateIncludeDirs()
 	if err != nil {
 		return 0, nil, nil, err
 	}

@@ -61,3 +61,24 @@ func SearchMacAddress() (*bytes.Buffer, error) {
 
 	return nil, ErrNoMacAddress
 }
+
+// NormalizePaths ...
+func NormalizePaths(paths []string) []string {
+	usedPaths := make(map[string]bool)
+	result := make([]string, 0, len(paths))
+	for _, path := range paths {
+		newPath, err := filepath.EvalSymlinks(path)
+		if err == nil {
+			path = newPath
+		}
+		newPath, err = filepath.Abs(path)
+		if err == nil {
+			path = newPath
+		}
+		if !usedPaths[path] {
+			result = append(result, path)
+			usedPaths[path] = true
+		}
+	}
+	return result
+}

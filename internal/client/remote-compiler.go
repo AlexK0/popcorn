@@ -77,7 +77,7 @@ func MakeRemoteCompiler(localCompiler *LocalCompiler, serverHostPort string) (*R
 		name:          localCompiler.name,
 		inFile:        localCompiler.inFile,
 		outFile:       localCompiler.outFile,
-		remoteCmdArgs: localCompiler.remoteCmdArgs,
+		remoteCmdArgs: localCompiler.MakeRemoteCmd("="),
 
 		connection: connection,
 		context:    context,
@@ -172,8 +172,10 @@ func (compiler *RemoteCompiler) CompileSource() (retCode int, stdout []byte, std
 		return 0, nil, nil, err
 	}
 
-	if err = common.WriteFile(compiler.outFile, res.CompiledSource); err != nil {
-		return 0, nil, nil, err
+	if res.CompilerRetCode == 0 {
+		if err = common.WriteFile(compiler.outFile, res.CompiledSource); err != nil {
+			return 0, nil, nil, err
+		}
 	}
 
 	return int(res.CompilerRetCode), res.CompilerStderr, res.CompilerStdout, nil

@@ -137,8 +137,8 @@ func (s *CompilationServer) CompileSource(ctx context.Context, in *pb.CompileSou
 	}
 
 	outFile := inFile + ".o"
-	fullPathDir := path.Dir(outFile)
-	compilerArgs := append(in.CompilerArgs, "-I", fullPathDir, "-isysroot", sysRootPath, "-o", outFile, in.FilePath)
+	compilerArgs := append([]string{"-isysroot", sysRootPath}, in.CompilerArgs...)
+	compilerArgs = append(compilerArgs, "-o", outFile, inFile)
 	compilerProc := exec.Command(in.Compiler, compilerArgs...)
 	var compilerStderr, compilerStdout bytes.Buffer
 	compilerProc.Stderr = &compilerStderr
@@ -148,14 +148,18 @@ func (s *CompilationServer) CompileSource(ctx context.Context, in *pb.CompileSou
 	defer os.Remove(inFile)
 	defer os.Remove(outFile)
 
-	if compiledSource, err := common.ReadFile(outFile); err != nil {
-		return nil, err
-	} else {
-		return &pb.CompileSourceReply{
-			CompilerRetCode: int32(compilerProc.ProcessState.ExitCode()),
-			CompiledSource:  compiledSource.Bytes(),
-			CompilerStdout:  compilerStdout.Bytes(),
-			CompilerStderr:  compilerStderr.Bytes(),
-		}, nil
+	var compiledSourceBody []byte
+	if compilerProc.ProcessState.ExitCode() == 0 {
+		if compiledSource, err := common.ReadFile(outFile); err == nil {
+			compiledSourceBody = compiledSource.Bytes()
+		} else {
+			return nil, err
+		}
 	}
+	return &pb.CompileSourceReply{
+		CompilerRetCode: int32(compilerProc.ProcessState.ExitCode()),
+		CompiledSource:  compiledSourceBody,
+		CompilerStdout:  compilerStdout.Bytes(),
+		CompilerStderr:  compilerStderr.Bytes(),
+	}, nil
 }
