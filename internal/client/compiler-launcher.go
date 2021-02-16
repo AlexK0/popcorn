@@ -2,7 +2,7 @@ package client
 
 import (
 	"errors"
-	"math/rand"
+	"hash/fnv"
 
 	pb "github.com/AlexK0/popcorn/internal/api/proto/v1"
 	"github.com/AlexK0/popcorn/internal/common"
@@ -43,6 +43,12 @@ func readHeadersMeta(headers []string) ([]*pb.HeaderClientMeta, error) {
 	return cachedHeaders, nil
 }
 
+func chooseServerNumber(localCompiler *LocalCompiler, hostsCount int) uint64 {
+	hasher := fnv.New64()
+	_, _ = hasher.Write([]byte(localCompiler.inFile))
+	return hasher.Sum64() % uint64(hostsCount)
+}
+
 func tryRemoteCompilation(localCompiler *LocalCompiler, settings *Settings) (retCode int, stdout []byte, stderr []byte, err error) {
 	hostsCount := len(settings.Servers)
 	if hostsCount == 0 {
@@ -59,7 +65,8 @@ func tryRemoteCompilation(localCompiler *LocalCompiler, settings *Settings) (ret
 		return 0, nil, nil, err
 	}
 
-	remoteCompiler, err := MakeRemoteCompiler(localCompiler, settings.Servers[rand.Intn(hostsCount)])
+	remoteServer := settings.Servers[chooseServerNumber(localCompiler, hostsCount)]
+	remoteCompiler, err := MakeRemoteCompiler(localCompiler, remoteServer)
 	if err != nil {
 		return 0, nil, nil, err
 	}
