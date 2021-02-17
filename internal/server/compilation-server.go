@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -104,18 +105,15 @@ func (s *CompilationServer) CopyHeaders(ctx context.Context, in *pb.CopyHeadersR
 	sysRoot := s.makeSysRoot(in.ClientID)
 	headerCache := GetClientHeaderCache(in.ClientID.MachineID, in.ClientID.MacAddress, in.ClientID.UserName)
 	for _, header := range in.Headers {
+		headerPathInEnv := path.Join(sysRoot, header.GlobalMeta.ClientMeta.FilePath)
+		if err := common.WriteFile(headerPathInEnv, header.HeaderBody); err != nil {
+			return nil, fmt.Errorf("Can't save copying header: %v", err)
+		}
 		cachedHeaderPath := s.makeCachedHeaderPath(header.GlobalMeta.ClientMeta.FilePath, header.GlobalMeta.SHA256Sum)
-		if err := common.WriteFile(cachedHeaderPath, header.HeaderBody); err != nil {
-			return nil, err
+		_ = os.MkdirAll(path.Dir(cachedHeaderPath), os.ModePerm)
+		if err := os.Link(headerPathInEnv, cachedHeaderPath); err == nil || os.IsExist(err) {
+			headerCache.SetHeaderSHA256(header.GlobalMeta.ClientMeta.FilePath, header.GlobalMeta.ClientMeta.MTime, header.GlobalMeta.SHA256Sum)
 		}
-		linkCreated, err := s.tryLinkHeaderFromCache(sysRoot, header.GlobalMeta.ClientMeta.FilePath, header.GlobalMeta.SHA256Sum)
-		if err != nil {
-			return nil, err
-		}
-		if !linkCreated {
-			return nil, os.ErrNotExist
-		}
-		headerCache.SetHeaderSHA256(header.GlobalMeta.ClientMeta.FilePath, header.GlobalMeta.ClientMeta.MTime, header.GlobalMeta.SHA256Sum)
 	}
 
 	return &pb.CopyHeadersReply{}, nil
@@ -136,12 +134,12 @@ func (s *CompilationServer) CompileSource(ctx context.Context, in *pb.CompileSou
 	inFile := path.Join(sysRootPath, in.FilePath)
 	err := common.WriteFile(inFile, in.SourceBody)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("Can't write source for compilation: %v", err)
 	}
 
 	outFile := inFile + ".o"
 	compilerArgs := make([]string, 0, 7+len(in.CompilerArgs))
-	compilerArgs = append(compilerArgs, "-nostdinc", "-nostdinc++", "-isysroot", ".", "-o", outFile, strings.TrimLeft(in.FilePath, "/"))
+	compilerArgs = append(compilerArgs, "-isysroot", ".", "-o", outFile, strings.TrimLeft(in.FilePath, "/"))
 	compilerArgs = append(compilerArgs, in.CompilerArgs...)
 	compilerProc := exec.Command(in.Compiler, compilerArgs...)
 	compilerProc.Dir = sysRootPath
@@ -149,6 +147,7 @@ func (s *CompilationServer) CompileSource(ctx context.Context, in *pb.CompileSou
 	compilerProc.Stderr = &compilerStderr
 	compilerProc.Stdout = &compilerStdout
 
+	common.LogInfo("Launch compiler: ", compilerProc.Args)
 	_ = compilerProc.Run()
 	defer os.Remove(inFile)
 	defer os.Remove(outFile)
@@ -156,7 +155,7 @@ func (s *CompilationServer) CompileSource(ctx context.Context, in *pb.CompileSou
 	var compiledSource []byte
 	if compilerProc.ProcessState.ExitCode() == 0 {
 		if compiledSource, err = ioutil.ReadFile(outFile); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("Can't read compiled source: %v", err)
 		}
 	}
 	return &pb.CompileSourceReply{

@@ -116,26 +116,21 @@ func MakeLocalCompiler(compilerArgs []string) *LocalCompiler {
 func extractHeaders(rawOut []byte) []string {
 	scanner := bufio.NewScanner(bytes.NewReader(rawOut))
 	scanner.Split(bufio.ScanWords)
-	headersMap := make(map[string]bool)
+	headers := make([]string, 0, 10)
 	for scanner.Scan() {
 		line := scanner.Text()
-		if strings.HasPrefix(line, "#pragma GCC pch_preprocess") {
+		if line == "#pragma" && scanner.Scan() && scanner.Text() == "GCC" && scanner.Scan() && scanner.Text() == "pch_preprocess" && scanner.Scan() {
+			headers = append(headers, strings.Trim(scanner.Text(), "\""))
 			continue
 		}
 
-		if line == "\\" || isSourceFile(line) || strings.HasSuffix(line, ".o") || strings.HasSuffix(line, ".o:") {
+		if line == "\\" || line == "#pragma" || isSourceFile(line) || strings.HasSuffix(line, ".o") || strings.HasSuffix(line, ".o:") {
 			continue
 		}
-		filePath, _ := filepath.EvalSymlinks(line)
-		filePath, _ = filepath.Abs(filePath)
-		headersMap[filePath] = true
+		headers = append(headers, line)
 	}
 
-	headers := make([]string, 0, len(headersMap))
-	for h := range headersMap {
-		headers = append(headers, h)
-	}
-
+	headers = common.NormalizePaths(headers)
 	rand.Shuffle(len(headers), func(i, j int) { headers[i], headers[j] = headers[j], headers[i] })
 	return headers
 }
