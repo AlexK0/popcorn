@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"path"
@@ -132,13 +133,15 @@ func (s *CompilationServer) CompileSource(ctx context.Context, in *pb.CompileSou
 	defer removeDir(sysRootPath, in.ClearEnvironmentAfterBuild)
 
 	inFile := path.Join(sysRootPath, in.FilePath)
-	if err := common.WriteFile(inFile, in.SourceBody); err != nil {
+	err := common.WriteFile(inFile, in.SourceBody)
+	if err != nil {
 		return nil, err
 	}
 
 	outFile := inFile + ".o"
-	compilerArgs := append([]string{"-isysroot", "."}, in.CompilerArgs...)
-	compilerArgs = append(compilerArgs, "-o", outFile, strings.TrimLeft(in.FilePath, "/"))
+	compilerArgs := make([]string, 0, 7+len(in.CompilerArgs))
+	compilerArgs = append(compilerArgs, "-nostdinc", "-nostdinc++", "-isysroot", ".", "-o", outFile, strings.TrimLeft(in.FilePath, "/"))
+	compilerArgs = append(compilerArgs, in.CompilerArgs...)
 	compilerProc := exec.Command(in.Compiler, compilerArgs...)
 	compilerProc.Dir = sysRootPath
 	var compilerStderr, compilerStdout bytes.Buffer
@@ -149,17 +152,15 @@ func (s *CompilationServer) CompileSource(ctx context.Context, in *pb.CompileSou
 	defer os.Remove(inFile)
 	defer os.Remove(outFile)
 
-	var compiledSourceBody []byte
+	var compiledSource []byte
 	if compilerProc.ProcessState.ExitCode() == 0 {
-		if compiledSource, err := common.ReadFile(outFile); err == nil {
-			compiledSourceBody = compiledSource.Bytes()
-		} else {
+		if compiledSource, err = ioutil.ReadFile(outFile); err != nil {
 			return nil, err
 		}
 	}
 	return &pb.CompileSourceReply{
 		CompilerRetCode: int32(compilerProc.ProcessState.ExitCode()),
-		CompiledSource:  compiledSourceBody,
+		CompiledSource:  compiledSource,
 		CompilerStdout:  compilerStdout.Bytes(),
 		CompilerStderr:  compilerStderr.Bytes(),
 	}, nil

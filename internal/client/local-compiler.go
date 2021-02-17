@@ -19,6 +19,7 @@ type LocalCompiler struct {
 	remoteCmdArgs            []string
 	dirsIquote               []string
 	dirsI                    []string
+	dirsIsystem              []string
 	localCmdArgs             []string
 	RemoteCompilationAllowed bool
 }
@@ -34,7 +35,7 @@ func MakeLocalCompiler(compilerArgs []string) *LocalCompiler {
 
 	compiler.dirsIquote = make([]string, 0, 2)
 	compiler.dirsI = make([]string, 0, 2)
-	dirsIsystem := make([]string, 0, 2)
+	compiler.dirsIsystem = make([]string, 0, 2)
 
 	for i := 1; i < len(compilerArgs); i++ {
 		arg := compilerArgs[i]
@@ -83,14 +84,14 @@ func MakeLocalCompiler(compilerArgs []string) *LocalCompiler {
 				continue
 			} else if arg == "-isystem" {
 				if i+1 < len(compilerArgs) {
-					dirsIsystem = append(dirsIsystem, compilerArgs[i+1])
+					compiler.dirsIsystem = append(compiler.dirsIsystem, compilerArgs[i+1])
 					i++
 					continue
 				} else {
 					remoteCompilationAllowed = false
 				}
 			} else if strings.HasPrefix(arg, "-isystem") {
-				dirsIsystem = append(dirsIsystem, arg[8:])
+				compiler.dirsIsystem = append(compiler.dirsIsystem, arg[8:])
 				continue
 			}
 		} else if isSourceFile(arg) {
@@ -108,7 +109,6 @@ func MakeLocalCompiler(compilerArgs []string) *LocalCompiler {
 		compiler.localCmdArgs = compilerArgs[1:]
 	}
 
-	compiler.dirsI = append(compiler.dirsI, dirsIsystem...)
 	compiler.RemoteCompilationAllowed = remoteCompilationAllowed && len(compiler.inFile) != 0 && strings.HasSuffix(compiler.outFile, ".o")
 	return &compiler
 }
@@ -159,13 +159,17 @@ func (compiler *LocalCompiler) addIncludeDirsFrom(rawOut string) {
 		} else if strings.HasPrefix(line, dirsIStart) {
 			processType = ProcessDirsI
 		} else if strings.HasPrefix(line, dirsEnd) {
-			processType = ProcessUnknown
+			return
 		} else if strings.HasPrefix(line, "/") {
 			switch processType {
 			case ProcessDirsIquote:
 				compiler.dirsIquote = append(compiler.dirsIquote, line)
 			case ProcessDirsI:
-				compiler.dirsI = append(compiler.dirsI, line)
+				if strings.HasPrefix(line, "/usr") {
+					compiler.dirsIsystem = append(compiler.dirsIsystem, line)
+				} else {
+					compiler.dirsI = append(compiler.dirsI, line)
+				}
 			}
 		}
 	}
@@ -175,13 +179,17 @@ func (compiler *LocalCompiler) addIncludeDirsFrom(rawOut string) {
 func (compiler *LocalCompiler) MakeRemoteCmd(dirsPrefix string, extraArgs ...string) []string {
 	compiler.dirsIquote = common.NormalizePaths(compiler.dirsIquote)
 	compiler.dirsI = common.NormalizePaths(compiler.dirsI)
+	compiler.dirsIsystem = common.NormalizePaths(compiler.dirsIsystem)
 
-	cmd := make([]string, 0, 2*len(compiler.dirsIquote)+2*len(compiler.dirsI)+len(compiler.remoteCmdArgs)+len(extraArgs))
+	cmd := make([]string, 0, 2*(len(compiler.dirsIquote)+len(compiler.dirsI)+len(compiler.dirsIsystem))+len(compiler.remoteCmdArgs)+len(extraArgs))
 	for _, dir := range compiler.dirsIquote {
 		cmd = append(cmd, "-iquote", dirsPrefix+dir)
 	}
 	for _, dir := range compiler.dirsI {
 		cmd = append(cmd, "-I", dirsPrefix+dir)
+	}
+	for _, dir := range compiler.dirsIsystem {
+		cmd = append(cmd, "-isystem", dirsPrefix+dir)
 	}
 
 	cmd = append(cmd, compiler.remoteCmdArgs...)

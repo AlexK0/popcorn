@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"io"
+	"io/ioutil"
 	"os"
 	"os/user"
 	"strings"
@@ -31,7 +32,7 @@ type RemoteCompiler struct {
 }
 
 func makeClientID() (*pb.ClientIdentifier, error) {
-	machineID, err := common.ReadFile("/etc/machine-id")
+	machineID, err := ioutil.ReadFile("/etc/machine-id")
 	if err != nil {
 		return nil, err
 	}
@@ -47,8 +48,8 @@ func makeClientID() (*pb.ClientIdentifier, error) {
 	}
 
 	return &pb.ClientIdentifier{
-		MachineID:  strings.TrimSpace(machineID.String()),
-		MacAddress: strings.ReplaceAll(strings.TrimSpace(mac.String()), ":", "-"),
+		MachineID:  strings.TrimSpace(string(machineID)),
+		MacAddress: strings.ReplaceAll(strings.TrimSpace(string(mac)), ":", "-"),
 		UserName:   strings.Join([]string{user.Username, user.Uid}, "-"),
 		Pid:        int32(os.Getpid()),
 	}, nil
@@ -155,7 +156,7 @@ func (compiler *RemoteCompiler) SetupEnvironment(headers []*pb.HeaderClientMeta)
 
 // CompileSource ...
 func (compiler *RemoteCompiler) CompileSource() (retCode int, stdout []byte, stderr []byte, err error) {
-	sourceBody, err := common.ReadFile(compiler.inFile)
+	sourceBody, err := ioutil.ReadFile(compiler.inFile)
 	if err != nil {
 		return 0, nil, nil, err
 	}
@@ -164,7 +165,7 @@ func (compiler *RemoteCompiler) CompileSource() (retCode int, stdout []byte, std
 		FilePath:                   compiler.inFile,
 		Compiler:                   compiler.name,
 		CompilerArgs:               compiler.remoteCmdArgs,
-		SourceBody:                 sourceBody.Bytes(),
+		SourceBody:                 sourceBody,
 		ClearEnvironmentAfterBuild: true,
 	})
 
