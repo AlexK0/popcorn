@@ -65,3 +65,18 @@ func NormalizePaths(paths []string) []string {
 	}
 	return result
 }
+
+// DirElementsAndSize ...
+func DirElementsAndSize(path string) (elements uint64, size uint64, err error) {
+	err = filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			size += uint64(info.Size())
+			elements++
+		}
+		return err
+	})
+	return
+}

@@ -1,16 +1,11 @@
 package client
 
 import (
-	"context"
 	"io"
 	"io/ioutil"
 	"os"
 	"os/user"
 	"strings"
-	"time"
-
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/encoding/gzip"
 
 	pb "github.com/AlexK0/popcorn/internal/api/proto/v1"
 	"github.com/AlexK0/popcorn/internal/common"
@@ -23,10 +18,7 @@ type RemoteCompiler struct {
 	outFile       string
 	remoteCmdArgs []string
 
-	connection *grpc.ClientConn
-	context    context.Context
-	cancelFunc context.CancelFunc
-	client     pb.CompilationServiceClient
+	grpcClient *GRPCClient
 
 	clientID *pb.ClientIdentifier
 }
@@ -62,36 +54,26 @@ func MakeRemoteCompiler(localCompiler *LocalCompiler, serverHostPort string) (*R
 		return nil, err
 	}
 
-	connection, err := grpc.Dial(serverHostPort,
-		grpc.WithInsecure(),
-		grpc.WithBlock(),
-		grpc.WithDefaultCallOptions(
-			grpc.UseCompressor(gzip.Name),
-			grpc.MaxCallRecvMsgSize(1024*1204*1024),
-			grpc.MaxCallSendMsgSize(1024*1204*1024)))
+	grpcClient, err := MakeGRPCClient(serverHostPort)
 	if err != nil {
 		return nil, err
 	}
 
-	context, cancelFunc := context.WithTimeout(context.Background(), 10*time.Minute)
 	return &RemoteCompiler{
 		name:          localCompiler.name,
 		inFile:        localCompiler.inFile,
 		outFile:       localCompiler.outFile,
 		remoteCmdArgs: localCompiler.MakeRemoteCmd("="),
 
-		connection: connection,
-		context:    context,
-		cancelFunc: cancelFunc,
-		client:     pb.NewCompilationServiceClient(connection),
+		grpcClient: grpcClient,
 		clientID:   clientID,
 	}, nil
 }
 
 // SetupEnvironment ...
 func (compiler *RemoteCompiler) SetupEnvironment(headers []*pb.HeaderClientMeta) error {
-	clientCacheStream, err := compiler.client.CopyHeadersFromClientCache(
-		compiler.context, &pb.CopyHeadersFromClientCacheRequest{
+	clientCacheStream, err := compiler.grpcClient.Client.CopyHeadersFromClientCache(
+		compiler.grpcClient.CallContext, &pb.CopyHeadersFromClientCacheRequest{
 			ClientID:                   compiler.clientID,
 			ClientHeaders:              headers,
 			ClearEnvironmentBeforeCopy: true,
@@ -125,8 +107,8 @@ func (compiler *RemoteCompiler) SetupEnvironment(headers []*pb.HeaderClientMeta)
 		}
 	}
 
-	globalCacheStream, err := compiler.client.CopyHeadersFromGlobalCache(
-		compiler.context, &pb.CopyHeadersFromGlobalCacheRequest{
+	globalCacheStream, err := compiler.grpcClient.Client.CopyHeadersFromGlobalCache(
+		compiler.grpcClient.CallContext, &pb.CopyHeadersFromGlobalCacheRequest{
 			ClientID:      compiler.clientID,
 			GlobalHeaders: headersForGlobalCache,
 		})
@@ -145,8 +127,8 @@ func (compiler *RemoteCompiler) SetupEnvironment(headers []*pb.HeaderClientMeta)
 		headersFullCopy = append(headersFullCopy, headersFullForGlobalCache[int(copyRes.MissedHeaderIndex)])
 	}
 
-	_, err = compiler.client.CopyHeaders(
-		compiler.context, &pb.CopyHeadersRequest{
+	_, err = compiler.grpcClient.Client.CopyHeaders(
+		compiler.grpcClient.CallContext, &pb.CopyHeadersRequest{
 			ClientID: compiler.clientID,
 			Headers:  headersFullCopy,
 		})
@@ -160,14 +142,15 @@ func (compiler *RemoteCompiler) CompileSource() (retCode int, stdout []byte, std
 	if err != nil {
 		return 0, nil, nil, err
 	}
-	res, err := compiler.client.CompileSource(compiler.context, &pb.CompileSourceRequest{
-		ClientID:                   compiler.clientID,
-		FilePath:                   compiler.inFile,
-		Compiler:                   compiler.name,
-		CompilerArgs:               compiler.remoteCmdArgs,
-		SourceBody:                 sourceBody,
-		ClearEnvironmentAfterBuild: true,
-	})
+	res, err := compiler.grpcClient.Client.CompileSource(
+		compiler.grpcClient.CallContext, &pb.CompileSourceRequest{
+			ClientID:                   compiler.clientID,
+			FilePath:                   compiler.inFile,
+			Compiler:                   compiler.name,
+			CompilerArgs:               compiler.remoteCmdArgs,
+			SourceBody:                 sourceBody,
+			ClearEnvironmentAfterBuild: true,
+		})
 
 	if err != nil {
 		return 0, nil, nil, err
@@ -184,13 +167,5 @@ func (compiler *RemoteCompiler) CompileSource() (retCode int, stdout []byte, std
 
 // Clear ...
 func (compiler *RemoteCompiler) Clear() {
-	if compiler.connection != nil {
-		compiler.cancelFunc()
-		compiler.connection.Close()
-
-		compiler.connection = nil
-		compiler.context = nil
-		compiler.cancelFunc = nil
-		compiler.client = nil
-	}
+	compiler.grpcClient.Clear()
 }

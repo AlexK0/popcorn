@@ -22,6 +22,7 @@ type CompilationServiceClient interface {
 	CopyHeadersFromGlobalCache(ctx context.Context, in *CopyHeadersFromGlobalCacheRequest, opts ...grpc.CallOption) (CompilationService_CopyHeadersFromGlobalCacheClient, error)
 	CopyHeaders(ctx context.Context, in *CopyHeadersRequest, opts ...grpc.CallOption) (*CopyHeadersReply, error)
 	CompileSource(ctx context.Context, in *CompileSourceRequest, opts ...grpc.CallOption) (*CompileSourceReply, error)
+	Status(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (*StatusReply, error)
 }
 
 type compilationServiceClient struct {
@@ -114,6 +115,15 @@ func (c *compilationServiceClient) CompileSource(ctx context.Context, in *Compil
 	return out, nil
 }
 
+func (c *compilationServiceClient) Status(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (*StatusReply, error) {
+	out := new(StatusReply)
+	err := c.cc.Invoke(ctx, "/popcorn.CompilationService/Status", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CompilationServiceServer is the server API for CompilationService service.
 // All implementations must embed UnimplementedCompilationServiceServer
 // for forward compatibility
@@ -122,6 +132,7 @@ type CompilationServiceServer interface {
 	CopyHeadersFromGlobalCache(*CopyHeadersFromGlobalCacheRequest, CompilationService_CopyHeadersFromGlobalCacheServer) error
 	CopyHeaders(context.Context, *CopyHeadersRequest) (*CopyHeadersReply, error)
 	CompileSource(context.Context, *CompileSourceRequest) (*CompileSourceReply, error)
+	Status(context.Context, *StatusRequest) (*StatusReply, error)
 	mustEmbedUnimplementedCompilationServiceServer()
 }
 
@@ -140,6 +151,9 @@ func (UnimplementedCompilationServiceServer) CopyHeaders(context.Context, *CopyH
 }
 func (UnimplementedCompilationServiceServer) CompileSource(context.Context, *CompileSourceRequest) (*CompileSourceReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CompileSource not implemented")
+}
+func (UnimplementedCompilationServiceServer) Status(context.Context, *StatusRequest) (*StatusReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Status not implemented")
 }
 func (UnimplementedCompilationServiceServer) mustEmbedUnimplementedCompilationServiceServer() {}
 
@@ -232,6 +246,24 @@ func _CompilationService_CompileSource_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CompilationService_Status_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CompilationServiceServer).Status(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/popcorn.CompilationService/Status",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CompilationServiceServer).Status(ctx, req.(*StatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CompilationService_ServiceDesc is the grpc.ServiceDesc for CompilationService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -246,6 +278,10 @@ var CompilationService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CompileSource",
 			Handler:    _CompilationService_CompileSource_Handler,
+		},
+		{
+			MethodName: "Status",
+			Handler:    _CompilationService_Status_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

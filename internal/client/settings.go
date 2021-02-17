@@ -29,7 +29,7 @@ func ReadClientSettings() *Settings {
 		LogSeverity: common.WarningSeverity,
 	}
 	for _, envVar := range os.Environ() {
-		if value := getEnvValue(envVar, "POPCORN_HOSTS="); len(value) != 0 {
+		if value := getEnvValue(envVar, "POPCORN_SERVERS="); len(value) != 0 {
 			settings.Servers = strings.Split(value, ";")
 			for i, host := range settings.Servers {
 				settings.Servers[i] = strings.TrimSpace(host)

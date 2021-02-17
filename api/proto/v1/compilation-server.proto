@@ -11,6 +11,8 @@ service CompilationService {
     rpc CopyHeaders (CopyHeadersRequest) returns (CopyHeadersReply) {}
 
     rpc CompileSource (CompileSourceRequest) returns (CompileSourceReply) {}
+
+    rpc Status(StatusRequest) returns (StatusReply) {}
 }
 
 message ClientIdentifier {
@@ -76,4 +78,17 @@ message CompileSourceReply {
     bytes CompiledSource = 2;
     bytes CompilerStdout = 3;
     bytes CompilerStderr = 4;
+}
+
+message StatusRequest {}
+
+message StatusReply {
+    uint64 CPUsCount = 1;
+    uint64 ActiveGoroutinesCount = 2;
+    uint64 ClientsCount = 3;
+    uint64 CachedHeaderOnDiskCount = 4;
+    uint64 CachedHeaderOnDiskBytes = 5;
+    uint64 HeapAllocBytes = 6;
+    uint64 SystemAllocBytes = 7;
+
 }

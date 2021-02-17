@@ -55,6 +55,14 @@ func GetClientHeaderCache(machineID string, mac string, userName string) *Client
 	return headerCache
 }
 
+// GetClientCachesCount ...
+func GetClientCachesCount() uint64 {
+	clientMap.mu.RLock()
+	clientsCount := len(clientMap.clients)
+	clientMap.mu.RUnlock()
+	return uint64(clientsCount)
+}
+
 // GetHeaderSHA256 ...
 func (headerCache *ClientHeaderCache) GetHeaderSHA256(headerPath string, headerMTime int64) string {
 	key := headerKey{headerPath, headerMTime}

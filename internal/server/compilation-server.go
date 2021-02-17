@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -163,5 +164,21 @@ func (s *CompilationServer) CompileSource(ctx context.Context, in *pb.CompileSou
 		CompiledSource:  compiledSource,
 		CompilerStdout:  compilerStdout.Bytes(),
 		CompilerStderr:  compilerStderr.Bytes(),
+	}, nil
+}
+
+// Status ...
+func (s *CompilationServer) Status(ctx context.Context, in *pb.StatusRequest) (*pb.StatusReply, error) {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	headersCount, headersSize, _ := common.DirElementsAndSize(s.HeaderCacheDir)
+	return &pb.StatusReply{
+		CPUsCount:               uint64(runtime.NumCPU()),
+		ActiveGoroutinesCount:   uint64(runtime.NumGoroutine()),
+		ClientsCount:            GetClientCachesCount(),
+		CachedHeaderOnDiskCount: headersCount,
+		CachedHeaderOnDiskBytes: headersSize,
+		HeapAllocBytes:          m.HeapAlloc,
+		SystemAllocBytes:        m.Sys,
 	}, nil
 }
