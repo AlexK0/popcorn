@@ -172,6 +172,7 @@ func (s *CompilationServer) Status(ctx context.Context, in *pb.StatusRequest) (*
 	runtime.ReadMemStats(&m)
 	headersCount, headersSize, _ := common.DirElementsAndSize(s.HeaderCacheDir)
 	return &pb.StatusReply{
+		ServerVersion:           common.GetVersion(),
 		CPUsCount:               uint64(runtime.NumCPU()),
 		ActiveGoroutinesCount:   uint64(runtime.NumGoroutine()),
 		ClientsCount:            GetClientCachesCount(),

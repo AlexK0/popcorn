@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"net"
 	"os"
 	"path"
@@ -38,6 +39,7 @@ func cleanupWorkingDir(workingDir string) bool {
 func main() {
 	settings := &server.Settings{}
 
+	version := flag.Bool("version", false, "Show version and exit.")
 	settings.Host = flag.String("host", "0.0.0.0", "Binding address.")
 	settings.Port = flag.Int("port", 43210, "Listening port.")
 	settings.WorkingDir = flag.String("working-dir", "/tmp/popcorn-server", "Directory for saving and compiling incoming files.")
@@ -46,6 +48,11 @@ func main() {
 	settings.LogSeverity = flag.String("log-severity", common.WarningSeverity, "Logger severity level.")
 
 	flag.Parse()
+
+	if *version {
+		fmt.Println(common.GetVersion())
+		os.Exit(0)
+	}
 
 	if !cleanupWorkingDir(*settings.WorkingDir) {
 		common.LogFatal("Can't create working directory", *settings.WorkingDir)

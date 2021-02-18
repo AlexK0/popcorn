@@ -56,6 +56,7 @@ func CheckServers(settings *Settings) {
 			fmt.Println("  Error:", res.err)
 		} else {
 			fmt.Println("\033[32mok\033[0m")
+			fmt.Println("  Server Version:", res.serverStatus.ServerVersion)
 			fmt.Println("  CPU count:", res.serverStatus.CPUsCount)
 			fmt.Println("  Goroutines count:", res.serverStatus.ActiveGoroutinesCount)
 			fmt.Println("  Clients count:", res.serverStatus.ClientsCount)

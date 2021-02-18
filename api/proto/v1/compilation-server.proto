@@ -83,12 +83,13 @@ message CompileSourceReply {
 message StatusRequest {}
 
 message StatusReply {
-    uint64 CPUsCount = 1;
-    uint64 ActiveGoroutinesCount = 2;
-    uint64 ClientsCount = 3;
-    uint64 CachedHeaderOnDiskCount = 4;
-    uint64 CachedHeaderOnDiskBytes = 5;
-    uint64 HeapAllocBytes = 6;
-    uint64 SystemAllocBytes = 7;
+    string ServerVersion = 1;
+    uint64 CPUsCount = 2;
+    uint64 ActiveGoroutinesCount = 3;
+    uint64 ClientsCount = 4;
+    uint64 CachedHeaderOnDiskCount = 5;
+    uint64 CachedHeaderOnDiskBytes = 6;
+    uint64 HeapAllocBytes = 7;
+    uint64 SystemAllocBytes = 8;
 
 }

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"flag"
+	"fmt"
 	"os"
 	"runtime"
 
@@ -13,13 +15,23 @@ func mainWithRetCode(settings *client.Settings) (retCode int, stdout []byte, std
 }
 
 func main() {
+	version := flag.Bool("version", false, "Show version and exit.")
+	checkServers := flag.Bool("check-servers", false, "Check servers status.")
+
+	flag.Parse()
+
+	if *version {
+		fmt.Println(common.GetVersion())
+		os.Exit(0)
+	}
+
 	runtime.GOMAXPROCS(2)
 	settings := client.ReadClientSettings()
 	if err := common.LoggerInit("popcorn-client", settings.LogFileName, settings.LogSeverity, settings.LogVerbosity); err != nil {
 		common.LogFatal("Can't init logger", err)
 	}
 
-	if len(os.Args) > 1 && os.Args[1] == "-check-servers" {
+	if *checkServers {
 		client.CheckServers(settings)
 		os.Exit(0)
 	}
