@@ -13,6 +13,8 @@ service CompilationService {
     rpc CompileSource (CompileSourceRequest) returns (CompileSourceReply) {}
 
     rpc Status(StatusRequest) returns (StatusReply) {}
+
+    rpc UpdateServer(UpdateServerRequest) returns (UpdateServerReply) {}
 }
 
 message ClientIdentifier {
@@ -84,12 +86,23 @@ message StatusRequest {}
 
 message StatusReply {
     string ServerVersion = 1;
+
     uint64 CPUsCount = 2;
     uint64 ActiveGoroutinesCount = 3;
     uint64 ClientsCount = 4;
+
     uint64 CachedHeaderOnDiskCount = 5;
     uint64 CachedHeaderOnDiskBytes = 6;
+
     uint64 HeapAllocBytes = 7;
     uint64 SystemAllocBytes = 8;
 
+    uint64 UptimeNanoseconds = 9;
+}
+
+message UpdateServerRequest {
+    bytes NewBinary = 1;
+}
+
+message UpdateServerReply {
 }

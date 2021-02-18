@@ -8,6 +8,8 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/AlexK0/popcorn/internal/common"
 	"github.com/AlexK0/popcorn/internal/server"
@@ -71,11 +73,23 @@ func main() {
 	}
 
 	grpcServer := grpc.NewServer(grpc.MaxRecvMsgSize(1024*1204*1024), grpc.MaxSendMsgSize(1024*1204*1024))
-	pb.RegisterCompilationServiceServer(grpcServer, &server.CompilationServer{
+	compilationServer := &server.CompilationServer{
 		WorkingDir:     *settings.WorkingDir,
 		HeaderCacheDir: path.Join(*settings.WorkingDir, "header-cache"),
-	})
+		GRPCServer:     grpcServer,
+		StartTime:      time.Now(),
+	}
+	pb.RegisterCompilationServiceServer(grpcServer, compilationServer)
 	if err := grpcServer.Serve(lis); err != nil {
 		common.LogFatal("Failed to serve:", err)
+	}
+
+	grpcServer.Stop()
+	lis.Close()
+
+	if len(compilationServer.NewPopcornServerBinaryPath) != 0 {
+		if _, err := syscall.ForkExec(compilationServer.NewPopcornServerBinaryPath, os.Args, nil); err != nil {
+			common.LogError("Can't restart server:", err)
+		}
 	}
 }

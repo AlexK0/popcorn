@@ -11,9 +11,11 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	pb "github.com/AlexK0/popcorn/internal/api/proto/v1"
 	"github.com/AlexK0/popcorn/internal/common"
+	"google.golang.org/grpc"
 )
 
 // CompilationServer ...
@@ -22,6 +24,10 @@ type CompilationServer struct {
 
 	WorkingDir     string
 	HeaderCacheDir string
+	StartTime      time.Time
+
+	NewPopcornServerBinaryPath string
+	GRPCServer                 *grpc.Server
 }
 
 func (s *CompilationServer) makeSysRoot(clientID *pb.ClientIdentifier) string {
@@ -180,5 +186,22 @@ func (s *CompilationServer) Status(ctx context.Context, in *pb.StatusRequest) (*
 		CachedHeaderOnDiskBytes: headersSize,
 		HeapAllocBytes:          m.HeapAlloc,
 		SystemAllocBytes:        m.Sys,
+		UptimeNanoseconds:       uint64(time.Since(s.StartTime).Nanoseconds()),
 	}, nil
+}
+
+func waitAndStop(grpcServer *grpc.Server) {
+	time.Sleep(time.Millisecond * 100)
+	grpcServer.GracefulStop()
+}
+
+// UpdateServer ...
+func (s *CompilationServer) UpdateServer(ctx context.Context, in *pb.UpdateServerRequest) (*pb.UpdateServerReply, error) {
+	newServerBinaryPath := path.Join(s.WorkingDir, "new-popcorn-server")
+	if err := ioutil.WriteFile(newServerBinaryPath, in.NewBinary, 0777); err != nil {
+		return nil, fmt.Errorf("Can't write new server binary: %v", err)
+	}
+	s.NewPopcornServerBinaryPath = newServerBinaryPath
+	go waitAndStop(s.GRPCServer)
+	return &pb.UpdateServerReply{}, nil
 }

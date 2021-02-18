@@ -2,6 +2,7 @@ package client
 
 import (
 	"fmt"
+	"io/ioutil"
 	"time"
 
 	pb "github.com/AlexK0/popcorn/internal/api/proto/v1"
@@ -57,6 +58,7 @@ func CheckServers(settings *Settings) {
 		} else {
 			fmt.Println("\033[32mok\033[0m")
 			fmt.Println("  Server Version:", res.serverStatus.ServerVersion)
+			fmt.Println("  Uptime:", time.Duration(res.serverStatus.UptimeNanoseconds))
 			fmt.Println("  CPU count:", res.serverStatus.CPUsCount)
 			fmt.Println("  Goroutines count:", res.serverStatus.ActiveGoroutinesCount)
 			fmt.Println("  Clients count:", res.serverStatus.ClientsCount)
@@ -65,6 +67,49 @@ func CheckServers(settings *Settings) {
 			fmt.Println("  Heap allocates bytes:", prettyBytes(res.serverStatus.HeapAllocBytes))
 			fmt.Println("  System allocates bytes:", prettyBytes(res.serverStatus.SystemAllocBytes))
 			fmt.Println("  Proceesing time:", res.processingTime)
+		}
+	}
+}
+
+type updateServerRes struct {
+	updateResult   *pb.UpdateServerReply
+	err            error
+	serverHostPort string
+}
+
+func updateServer(newServerBinaryPath string, serverHostPort string, updateChannel chan<- updateServerRes) {
+	grpcClient, err := MakeGRPCClient(serverHostPort)
+	if err != nil {
+		updateChannel <- updateServerRes{err: err, serverHostPort: serverHostPort}
+		return
+	}
+	defer grpcClient.Clear()
+
+	serverBinary, err := ioutil.ReadFile(newServerBinaryPath)
+	if err != nil {
+		updateChannel <- updateServerRes{err: err, serverHostPort: serverHostPort}
+		return
+	}
+	updateResult, err := grpcClient.Client.UpdateServer(grpcClient.CallContext, &pb.UpdateServerRequest{NewBinary: serverBinary})
+	updateChannel <- updateServerRes{updateResult: updateResult, err: err, serverHostPort: serverHostPort}
+}
+
+// UpdateServers ...
+func UpdateServers(settings *Settings, newServerBinaryPath string) {
+	updateChannel := make(chan updateServerRes)
+
+	for _, serverHostPort := range settings.Servers {
+		go updateServer(newServerBinaryPath, serverHostPort, updateChannel)
+	}
+
+	for range settings.Servers {
+		res := <-updateChannel
+		fmt.Printf("Server \033[36m%s\033[0m: ", res.serverHostPort)
+		if res.err != nil {
+			fmt.Println("\033[31merror\033[0m")
+			fmt.Println("  Error:", res.err)
+		} else {
+			fmt.Println("\033[32mdone\033[0m")
 		}
 	}
 }

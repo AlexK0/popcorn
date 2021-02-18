@@ -17,6 +17,7 @@ func mainWithRetCode(settings *client.Settings) (retCode int, stdout []byte, std
 func main() {
 	version := flag.Bool("version", false, "Show version and exit.")
 	checkServers := flag.Bool("check-servers", false, "Check servers status.")
+	updateServerNewBinaryPath := flag.String("update-servers", "", "Check servers status.")
 
 	flag.Parse()
 
@@ -33,6 +34,11 @@ func main() {
 
 	if *checkServers {
 		client.CheckServers(settings)
+		os.Exit(0)
+	}
+
+	if len(*updateServerNewBinaryPath) != 0 {
+		client.UpdateServers(settings, *updateServerNewBinaryPath)
 		os.Exit(0)
 	}
 
