@@ -20,7 +20,7 @@ const _ = grpc.SupportPackageIsVersion7
 type CompilationServiceClient interface {
 	CopyHeadersFromClientCache(ctx context.Context, in *CopyHeadersFromClientCacheRequest, opts ...grpc.CallOption) (CompilationService_CopyHeadersFromClientCacheClient, error)
 	CopyHeadersFromGlobalCache(ctx context.Context, in *CopyHeadersFromGlobalCacheRequest, opts ...grpc.CallOption) (CompilationService_CopyHeadersFromGlobalCacheClient, error)
-	CopyHeaders(ctx context.Context, in *CopyHeadersRequest, opts ...grpc.CallOption) (*CopyHeadersReply, error)
+	CopyHeader(ctx context.Context, in *CopyHeaderRequest, opts ...grpc.CallOption) (*CopyHeaderReply, error)
 	CompileSource(ctx context.Context, in *CompileSourceRequest, opts ...grpc.CallOption) (*CompileSourceReply, error)
 	Status(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (*StatusReply, error)
 	UpdateServer(ctx context.Context, in *UpdateServerRequest, opts ...grpc.CallOption) (*UpdateServerReply, error)
@@ -98,9 +98,9 @@ func (x *compilationServiceCopyHeadersFromGlobalCacheClient) Recv() (*CopyHeader
 	return m, nil
 }
 
-func (c *compilationServiceClient) CopyHeaders(ctx context.Context, in *CopyHeadersRequest, opts ...grpc.CallOption) (*CopyHeadersReply, error) {
-	out := new(CopyHeadersReply)
-	err := c.cc.Invoke(ctx, "/popcorn.CompilationService/CopyHeaders", in, out, opts...)
+func (c *compilationServiceClient) CopyHeader(ctx context.Context, in *CopyHeaderRequest, opts ...grpc.CallOption) (*CopyHeaderReply, error) {
+	out := new(CopyHeaderReply)
+	err := c.cc.Invoke(ctx, "/popcorn.CompilationService/CopyHeader", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +140,7 @@ func (c *compilationServiceClient) UpdateServer(ctx context.Context, in *UpdateS
 type CompilationServiceServer interface {
 	CopyHeadersFromClientCache(*CopyHeadersFromClientCacheRequest, CompilationService_CopyHeadersFromClientCacheServer) error
 	CopyHeadersFromGlobalCache(*CopyHeadersFromGlobalCacheRequest, CompilationService_CopyHeadersFromGlobalCacheServer) error
-	CopyHeaders(context.Context, *CopyHeadersRequest) (*CopyHeadersReply, error)
+	CopyHeader(context.Context, *CopyHeaderRequest) (*CopyHeaderReply, error)
 	CompileSource(context.Context, *CompileSourceRequest) (*CompileSourceReply, error)
 	Status(context.Context, *StatusRequest) (*StatusReply, error)
 	UpdateServer(context.Context, *UpdateServerRequest) (*UpdateServerReply, error)
@@ -157,8 +157,8 @@ func (UnimplementedCompilationServiceServer) CopyHeadersFromClientCache(*CopyHea
 func (UnimplementedCompilationServiceServer) CopyHeadersFromGlobalCache(*CopyHeadersFromGlobalCacheRequest, CompilationService_CopyHeadersFromGlobalCacheServer) error {
 	return status.Errorf(codes.Unimplemented, "method CopyHeadersFromGlobalCache not implemented")
 }
-func (UnimplementedCompilationServiceServer) CopyHeaders(context.Context, *CopyHeadersRequest) (*CopyHeadersReply, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method CopyHeaders not implemented")
+func (UnimplementedCompilationServiceServer) CopyHeader(context.Context, *CopyHeaderRequest) (*CopyHeaderReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CopyHeader not implemented")
 }
 func (UnimplementedCompilationServiceServer) CompileSource(context.Context, *CompileSourceRequest) (*CompileSourceReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CompileSource not implemented")
@@ -224,20 +224,20 @@ func (x *compilationServiceCopyHeadersFromGlobalCacheServer) Send(m *CopyHeaders
 	return x.ServerStream.SendMsg(m)
 }
 
-func _CompilationService_CopyHeaders_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CopyHeadersRequest)
+func _CompilationService_CopyHeader_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CopyHeaderRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(CompilationServiceServer).CopyHeaders(ctx, in)
+		return srv.(CompilationServiceServer).CopyHeader(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/popcorn.CompilationService/CopyHeaders",
+		FullMethod: "/popcorn.CompilationService/CopyHeader",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(CompilationServiceServer).CopyHeaders(ctx, req.(*CopyHeadersRequest))
+		return srv.(CompilationServiceServer).CopyHeader(ctx, req.(*CopyHeaderRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -304,8 +304,8 @@ var CompilationService_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*CompilationServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "CopyHeaders",
-			Handler:    _CompilationService_CopyHeaders_Handler,
+			MethodName: "CopyHeader",
+			Handler:    _CompilationService_CopyHeader_Handler,
 		},
 		{
 			MethodName: "CompileSource",

@@ -8,7 +8,7 @@ package popcorn;
 service CompilationService {
     rpc CopyHeadersFromClientCache (CopyHeadersFromClientCacheRequest) returns (stream CopyHeadersFromClientCacheReply) {}
     rpc CopyHeadersFromGlobalCache (CopyHeadersFromGlobalCacheRequest) returns (stream CopyHeadersFromGlobalCacheReply) {}
-    rpc CopyHeaders (CopyHeadersRequest) returns (CopyHeadersReply) {}
+    rpc CopyHeader (CopyHeaderRequest) returns (CopyHeaderReply) {}
 
     rpc CompileSource (CompileSourceRequest) returns (CompileSourceReply) {}
 
@@ -59,12 +59,12 @@ message HeaderFullData {
     bytes HeaderBody = 2;
 }
 
-message CopyHeadersRequest {
+message CopyHeaderRequest {
     ClientIdentifier ClientID = 1;
-    repeated HeaderFullData Headers = 2;
+    HeaderFullData Header = 2;
 }
 
-message CopyHeadersReply {}
+message CopyHeaderReply {}
 
 message CompileSourceRequest {
     ClientIdentifier ClientID = 1;

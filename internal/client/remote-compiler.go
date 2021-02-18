@@ -70,6 +70,15 @@ func MakeRemoteCompiler(localCompiler *LocalCompiler, serverHostPort string) (*R
 	}, nil
 }
 
+func (compiler *RemoteCompiler) copyHeaderAsync(headersFullCopy *pb.HeaderFullData, errorChannel chan<- error) {
+	_, err := compiler.grpcClient.Client.CopyHeader(
+		compiler.grpcClient.CallContext, &pb.CopyHeaderRequest{
+			ClientID: compiler.clientID,
+			Header:   headersFullCopy,
+		})
+	errorChannel <- err
+}
+
 // SetupEnvironment ...
 func (compiler *RemoteCompiler) SetupEnvironment(headers []*pb.HeaderClientMeta) error {
 	clientCacheStream, err := compiler.grpcClient.Client.CopyHeadersFromClientCache(
@@ -82,7 +91,9 @@ func (compiler *RemoteCompiler) SetupEnvironment(headers []*pb.HeaderClientMeta)
 		return err
 	}
 
-	headersFullCopy := make([]*pb.HeaderFullData, 0, len(headers))
+	copyHadersChannel := make(chan error)
+	copyHadersCount := 0
+
 	headersFullForGlobalCache := make([]*pb.HeaderFullData, 0, len(headers))
 	headersForGlobalCache := make([]*pb.HeaderGlobalMeta, 0, len(headers))
 	for {
@@ -100,7 +111,8 @@ func (compiler *RemoteCompiler) SetupEnvironment(headers []*pb.HeaderClientMeta)
 			return err
 		}
 		if copyRes.FullCopyRequired {
-			headersFullCopy = append(headersFullCopy, fullHeader)
+			copyHadersCount++
+			go compiler.copyHeaderAsync(fullHeader, copyHadersChannel)
 		} else {
 			headersFullForGlobalCache = append(headersFullForGlobalCache, fullHeader)
 			headersForGlobalCache = append(headersForGlobalCache, fullHeader.GlobalMeta)
@@ -115,6 +127,7 @@ func (compiler *RemoteCompiler) SetupEnvironment(headers []*pb.HeaderClientMeta)
 	if err != nil {
 		return err
 	}
+
 	for {
 		copyRes, err := globalCacheStream.Recv()
 		if err == io.EOF {
@@ -124,14 +137,16 @@ func (compiler *RemoteCompiler) SetupEnvironment(headers []*pb.HeaderClientMeta)
 		if err != nil {
 			return err
 		}
-		headersFullCopy = append(headersFullCopy, headersFullForGlobalCache[int(copyRes.MissedHeaderIndex)])
+
+		copyHadersCount++
+		go compiler.copyHeaderAsync(headersFullForGlobalCache[int(copyRes.MissedHeaderIndex)], copyHadersChannel)
 	}
 
-	_, err = compiler.grpcClient.Client.CopyHeaders(
-		compiler.grpcClient.CallContext, &pb.CopyHeadersRequest{
-			ClientID: compiler.clientID,
-			Headers:  headersFullCopy,
-		})
+	for i := 0; i < copyHadersCount; i++ {
+		if copyResultErr := <-copyHadersChannel; copyResultErr != nil {
+			err = copyResultErr
+		}
+	}
 
 	return err
 }

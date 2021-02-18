@@ -1,6 +1,9 @@
 package server
 
-import "sync"
+import (
+	"sync"
+	"time"
+)
 
 type headerKey struct {
 	path  string
@@ -11,56 +14,6 @@ type headerKey struct {
 type ClientHeaderCache struct {
 	headersSHA256 map[headerKey]string
 	mu            sync.RWMutex
-}
-
-type clientKey struct {
-	machineID string
-	mac       string
-	userName  string
-}
-
-type clientCacheMap struct {
-	clients map[clientKey]*ClientHeaderCache
-	mu      sync.RWMutex
-}
-
-var clientMap clientCacheMap
-
-func init() {
-	clientMap.clients = make(map[clientKey]*ClientHeaderCache)
-}
-
-// GetClientHeaderCache ...
-func GetClientHeaderCache(machineID string, mac string, userName string) *ClientHeaderCache {
-	key := clientKey{machineID, mac, userName}
-	clientMap.mu.RLock()
-	headerCache := clientMap.clients[key]
-	clientMap.mu.RUnlock()
-
-	if headerCache != nil {
-		return headerCache
-	}
-
-	newHeaderCache := &ClientHeaderCache{
-		headersSHA256: make(map[headerKey]string),
-	}
-
-	clientMap.mu.Lock()
-	headerCache = clientMap.clients[key]
-	if headerCache == nil {
-		clientMap.clients[key] = newHeaderCache
-		headerCache = newHeaderCache
-	}
-	clientMap.mu.Unlock()
-	return headerCache
-}
-
-// GetClientCachesCount ...
-func GetClientCachesCount() uint64 {
-	clientMap.mu.RLock()
-	clientsCount := len(clientMap.clients)
-	clientMap.mu.RUnlock()
-	return uint64(clientsCount)
 }
 
 // GetHeaderSHA256 ...
@@ -78,4 +31,107 @@ func (headerCache *ClientHeaderCache) SetHeaderSHA256(headerPath string, headerM
 	headerCache.mu.Lock()
 	headerCache.headersSHA256[key] = sha256sum
 	headerCache.mu.Unlock()
+}
+
+type clientKey struct {
+	machineID string
+	mac       string
+	userName  string
+}
+
+// ClientCacheMap ...
+type ClientCacheMap struct {
+	clients map[clientKey]*ClientHeaderCache
+	mu      sync.RWMutex
+}
+
+// MakeClientCacheMap ...
+func MakeClientCacheMap() *ClientCacheMap {
+	return &ClientCacheMap{
+		clients: make(map[clientKey]*ClientHeaderCache, 1024),
+	}
+}
+
+// GetHeaderCache ...
+func (clientMap *ClientCacheMap) GetHeaderCache(machineID string, mac string, userName string) *ClientHeaderCache {
+	key := clientKey{machineID, mac, userName}
+	clientMap.mu.RLock()
+	headerCache := clientMap.clients[key]
+	clientMap.mu.RUnlock()
+
+	if headerCache != nil {
+		return headerCache
+	}
+
+	newHeaderCache := &ClientHeaderCache{
+		headersSHA256: make(map[headerKey]string, 1024),
+	}
+
+	clientMap.mu.Lock()
+	headerCache = clientMap.clients[key]
+	if headerCache == nil {
+		clientMap.clients[key] = newHeaderCache
+		headerCache = newHeaderCache
+	}
+	clientMap.mu.Unlock()
+	return headerCache
+}
+
+// GetCachesCount ...
+func (clientMap *ClientCacheMap) GetCachesCount() uint64 {
+	clientMap.mu.RLock()
+	clientsCount := len(clientMap.clients)
+	clientMap.mu.RUnlock()
+	return uint64(clientsCount)
+}
+
+type processingHeaderKey struct {
+	path      string
+	sha256sum string
+}
+
+// ProcessingHeadersMap ...
+type ProcessingHeadersMap struct {
+	headers map[processingHeaderKey]time.Time
+	mu      sync.Mutex
+}
+
+// MakeProcessingHeaders ...
+func MakeProcessingHeaders() *ProcessingHeadersMap {
+	return &ProcessingHeadersMap{
+		headers: make(map[processingHeaderKey]time.Time, 1024),
+	}
+}
+
+// StartHeaderProcessing ...
+func (processingHeaders *ProcessingHeadersMap) StartHeaderProcessing(headerPath string, sha256sum string) bool {
+	key := processingHeaderKey{headerPath, sha256sum}
+	now := time.Now()
+	started := false
+	processingHeaders.mu.Lock()
+	processingStartTime, alreadyStarted := processingHeaders.headers[key]
+	// TODO Why 5 second?
+	if !alreadyStarted || now.Sub(processingStartTime) > time.Second*5 {
+		processingHeaders.headers[key] = now
+		started = true
+	}
+	processingHeaders.mu.Unlock()
+	return started
+}
+
+// ForceStartHeaderProcessing ...
+func (processingHeaders *ProcessingHeadersMap) ForceStartHeaderProcessing(headerPath string, sha256sum string) {
+	key := processingHeaderKey{headerPath, sha256sum}
+	now := time.Now()
+	processingHeaders.mu.Lock()
+	processingHeaders.headers[key] = now
+	processingHeaders.mu.Unlock()
+}
+
+// FinishHeaderProcessing ...
+func (processingHeaders *ProcessingHeadersMap) FinishHeaderProcessing(headerPath string, sha256sum string) {
+	key := processingHeaderKey{headerPath, sha256sum}
+	processingHeaders.mu.Lock()
+	delete(processingHeaders.headers, key)
+	processingHeaders.mu.Unlock()
 }

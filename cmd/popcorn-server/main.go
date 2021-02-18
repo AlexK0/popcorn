@@ -80,6 +80,9 @@ func main() {
 		HeaderCacheDir: path.Join(*settings.WorkingDir, "header-cache"),
 		GRPCServer:     grpcServer,
 		UpdatePassword: *settings.UpdatePassword,
+
+		ClientCache:      server.MakeClientCacheMap(),
+		UploadingHeaders: server.MakeProcessingHeaders(),
 	}
 	pb.RegisterCompilationServiceServer(grpcServer, compilationServer)
 	if err := grpcServer.Serve(lis); err != nil {
