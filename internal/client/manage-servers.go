@@ -77,7 +77,7 @@ type updateServerRes struct {
 	serverHostPort string
 }
 
-func updateServer(newServerBinaryPath string, serverHostPort string, updateChannel chan<- updateServerRes) {
+func updateServer(newServerBinaryPath string, updatePassword string, serverHostPort string, updateChannel chan<- updateServerRes) {
 	grpcClient, err := MakeGRPCClient(serverHostPort)
 	if err != nil {
 		updateChannel <- updateServerRes{err: err, serverHostPort: serverHostPort}
@@ -90,16 +90,18 @@ func updateServer(newServerBinaryPath string, serverHostPort string, updateChann
 		updateChannel <- updateServerRes{err: err, serverHostPort: serverHostPort}
 		return
 	}
-	updateResult, err := grpcClient.Client.UpdateServer(grpcClient.CallContext, &pb.UpdateServerRequest{NewBinary: serverBinary})
+	updateResult, err := grpcClient.Client.UpdateServer(
+		grpcClient.CallContext,
+		&pb.UpdateServerRequest{NewBinary: serverBinary, Password: updatePassword})
 	updateChannel <- updateServerRes{updateResult: updateResult, err: err, serverHostPort: serverHostPort}
 }
 
 // UpdateServers ...
-func UpdateServers(settings *Settings, newServerBinaryPath string) {
+func UpdateServers(settings *Settings, newServerBinaryPath string, updatePassword string) {
 	updateChannel := make(chan updateServerRes)
 
 	for _, serverHostPort := range settings.Servers {
-		go updateServer(newServerBinaryPath, serverHostPort, updateChannel)
+		go updateServer(newServerBinaryPath, updatePassword, serverHostPort, updateChannel)
 	}
 
 	for range settings.Servers {

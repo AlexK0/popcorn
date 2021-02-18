@@ -102,6 +102,7 @@ message StatusReply {
 
 message UpdateServerRequest {
     bytes NewBinary = 1;
+    string Password = 2;
 }
 
 message UpdateServerReply {

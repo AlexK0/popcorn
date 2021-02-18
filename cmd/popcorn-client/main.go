@@ -18,6 +18,7 @@ func main() {
 	version := flag.Bool("version", false, "Show version and exit.")
 	checkServers := flag.Bool("check-servers", false, "Check servers status.")
 	updateServerNewBinaryPath := flag.String("update-servers", "", "Check servers status.")
+	updatePassword := flag.String("update-password", "", "Password for remote update.")
 
 	flag.Parse()
 
@@ -38,7 +39,7 @@ func main() {
 	}
 
 	if len(*updateServerNewBinaryPath) != 0 {
-		client.UpdateServers(settings, *updateServerNewBinaryPath)
+		client.UpdateServers(settings, *updateServerNewBinaryPath, *updatePassword)
 		os.Exit(0)
 	}
 

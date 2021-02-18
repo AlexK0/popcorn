@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	pb "github.com/AlexK0/popcorn/internal/api/proto/v1"
@@ -22,12 +23,16 @@ import (
 type CompilationServer struct {
 	pb.UnimplementedCompilationServiceServer
 
+	StartTime time.Time
+
 	WorkingDir     string
 	HeaderCacheDir string
-	StartTime      time.Time
 
-	NewPopcornServerBinaryPath string
 	GRPCServer                 *grpc.Server
+	UpdatePassword             string
+	NewPopcornServerBinaryPath string
+
+	updateLock sync.Mutex
 }
 
 func (s *CompilationServer) makeSysRoot(clientID *pb.ClientIdentifier) string {
@@ -197,6 +202,17 @@ func waitAndStop(grpcServer *grpc.Server) {
 
 // UpdateServer ...
 func (s *CompilationServer) UpdateServer(ctx context.Context, in *pb.UpdateServerRequest) (*pb.UpdateServerReply, error) {
+	s.updateLock.Lock()
+	defer s.updateLock.Unlock()
+
+	if len(s.UpdatePassword) == 0 {
+		return nil, fmt.Errorf("Remote update disabled")
+	}
+	if s.UpdatePassword != in.Password {
+		s.UpdatePassword = ""
+		return nil, fmt.Errorf("Invalid password, disabling remote updates")
+	}
+
 	newServerBinaryPath := path.Join(s.WorkingDir, "new-popcorn-server")
 	if err := ioutil.WriteFile(newServerBinaryPath, in.NewBinary, 0777); err != nil {
 		return nil, fmt.Errorf("Can't write new server binary: %v", err)

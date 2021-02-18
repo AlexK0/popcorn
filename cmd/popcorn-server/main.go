@@ -44,6 +44,7 @@ func main() {
 	version := flag.Bool("version", false, "Show version and exit.")
 	settings.Host = flag.String("host", "0.0.0.0", "Binding address.")
 	settings.Port = flag.Int("port", 43210, "Listening port.")
+	settings.UpdatePassword = flag.String("update-password", "", "Secret password for remote update.")
 	settings.WorkingDir = flag.String("working-dir", "/tmp/popcorn-server", "Directory for saving and compiling incoming files.")
 	settings.LogFileName = flag.String("log-filename", "", "Logger file.")
 	settings.LogVerbosity = flag.Int("log-verbosity", 0, "Logger verbosity level.")
@@ -74,10 +75,11 @@ func main() {
 
 	grpcServer := grpc.NewServer(grpc.MaxRecvMsgSize(1024*1204*1024), grpc.MaxSendMsgSize(1024*1204*1024))
 	compilationServer := &server.CompilationServer{
+		StartTime:      time.Now(),
 		WorkingDir:     *settings.WorkingDir,
 		HeaderCacheDir: path.Join(*settings.WorkingDir, "header-cache"),
 		GRPCServer:     grpcServer,
-		StartTime:      time.Now(),
+		UpdatePassword: *settings.UpdatePassword,
 	}
 	pb.RegisterCompilationServiceServer(grpcServer, compilationServer)
 	if err := grpcServer.Serve(lis); err != nil {
