@@ -4,7 +4,6 @@ import (
 	"errors"
 	"io/ioutil"
 	"os"
-	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -12,7 +11,7 @@ import (
 
 // WriteFile ...
 func WriteFile(fullPath string, fileContent []byte) error {
-	directory, fileName := path.Split(fullPath)
+	directory, fileName := filepath.Split(fullPath)
 	if err := os.MkdirAll(directory, os.ModePerm); err != nil {
 		return err
 	}

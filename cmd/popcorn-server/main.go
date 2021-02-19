@@ -6,8 +6,6 @@ import (
 	"net"
 	"os"
 	"path"
-	"strconv"
-	"strings"
 	"syscall"
 	"time"
 
@@ -42,13 +40,13 @@ func main() {
 	settings := &server.Settings{}
 
 	version := flag.Bool("version", false, "Show version and exit.")
-	settings.Host = flag.String("host", "0.0.0.0", "Binding address.")
-	settings.Port = flag.Int("port", 43210, "Listening port.")
-	settings.UpdatePassword = flag.String("update-password", "", "Secret password for remote update.")
-	settings.WorkingDir = flag.String("working-dir", "/tmp/popcorn-server", "Directory for saving and compiling incoming files.")
-	settings.LogFileName = flag.String("log-filename", "", "Logger file.")
-	settings.LogVerbosity = flag.Int("log-verbosity", 0, "Logger verbosity level.")
-	settings.LogSeverity = flag.String("log-severity", common.WarningSeverity, "Logger severity level.")
+	flag.StringVar(&settings.Host, "host", "0.0.0.0", "Binding address.")
+	flag.IntVar(&settings.Port, "port", 43210, "Listening port.")
+	flag.StringVar(&settings.UpdatePassword, "update-password", "", "Secret password for remote update.")
+	flag.StringVar(&settings.WorkingDir, "working-dir", "/tmp/popcorn-server", "Directory for saving and compiling incoming files.")
+	flag.StringVar(&settings.LogFileName, "log-filename", "", "Logger file.")
+	flag.IntVar(&settings.LogVerbosity, "log-verbosity", 0, "Logger verbosity level.")
+	flag.StringVar(&settings.LogSeverity, "log-severity", common.WarningSeverity, "Logger severity level.")
 
 	flag.Parse()
 
@@ -57,16 +55,15 @@ func main() {
 		os.Exit(0)
 	}
 
-	if !cleanupWorkingDir(*settings.WorkingDir) {
-		common.LogFatal("Can't create working directory", *settings.WorkingDir)
+	if !cleanupWorkingDir(settings.WorkingDir) {
+		common.LogFatal("Can't create working directory", settings.WorkingDir)
 	}
 
-	if err := common.LoggerInit("popcorn-server", *settings.LogFileName, *settings.LogSeverity, *settings.LogVerbosity); err != nil {
+	if err := common.LoggerInit("popcorn-server", settings.LogFileName, settings.LogSeverity, settings.LogVerbosity); err != nil {
 		common.LogFatal("Can't init logger", err)
 	}
 
-	addr := strings.Join([]string{*settings.Host, strconv.Itoa(*settings.Port)}, ":")
-
+	addr := fmt.Sprintf("%s:%d", settings.Host, settings.Port)
 	common.LogInfo("Start listening", addr)
 	lis, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -76,10 +73,10 @@ func main() {
 	grpcServer := grpc.NewServer(grpc.MaxRecvMsgSize(1024*1204*1024), grpc.MaxSendMsgSize(1024*1204*1024))
 	compilationServer := &server.CompilationServer{
 		StartTime:      time.Now(),
-		WorkingDir:     *settings.WorkingDir,
-		HeaderCacheDir: path.Join(*settings.WorkingDir, "header-cache"),
+		WorkingDir:     settings.WorkingDir,
+		HeaderCacheDir: path.Join(settings.WorkingDir, "header-cache"),
 		GRPCServer:     grpcServer,
-		UpdatePassword: *settings.UpdatePassword,
+		UpdatePassword: settings.UpdatePassword,
 
 		ClientCache:      server.MakeClientCacheMap(),
 		UploadingHeaders: server.MakeProcessingHeaders(),

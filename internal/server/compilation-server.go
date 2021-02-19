@@ -63,6 +63,42 @@ func (s *CompilationServer) tryLinkHeaderFromCache(sysRoot string, headerPath st
 	return false, err
 }
 
+type deferredHeader struct {
+	headerPath string
+	sha256sum  string
+	index      int
+}
+
+func (s *CompilationServer) waitDeferredHeaders(sysRoot string, headers []deferredHeader) (done []deferredHeader, stillDeferted []deferredHeader, err error) {
+	if len(headers) == 0 {
+		return nil, nil, nil
+	}
+
+	done = make([]deferredHeader, 0, len(headers))
+
+	start := time.Now()
+	// TODO Why 6 seconds?
+	for len(headers) != 0 && time.Since(start) < 6*time.Second {
+		// TODO Why 100 milliseconds?
+		time.Sleep(100 * time.Millisecond)
+		stillDeferted = make([]deferredHeader, 0, len(headers)-len(done))
+		for _, h := range headers {
+			linkCreated, err := s.tryLinkHeaderFromCache(sysRoot, h.headerPath, h.sha256sum)
+			if err != nil {
+				return nil, nil, err
+			}
+			if linkCreated {
+				done = append(done, h)
+			} else {
+				stillDeferted = append(stillDeferted, h)
+			}
+		}
+		headers = stillDeferted
+	}
+
+	return
+}
+
 // CopyHeadersFromClientCache ...
 func (s *CompilationServer) CopyHeadersFromClientCache(in *pb.CopyHeadersFromClientCacheRequest, out pb.CompilationService_CopyHeadersFromClientCacheServer) error {
 	sysRoot := s.makeSysRoot(in.ClientID)
@@ -70,11 +106,6 @@ func (s *CompilationServer) CopyHeadersFromClientCache(in *pb.CopyHeadersFromCli
 		if err := os.RemoveAll(sysRoot); err != nil {
 			return err
 		}
-	}
-
-	type deferredHeader struct {
-		sha256sum string
-		index     int
 	}
 
 	deferredHeadersForCopy := make([]deferredHeader, 0, 16)
@@ -100,42 +131,19 @@ func (s *CompilationServer) CopyHeadersFromClientCache(in *pb.CopyHeadersFromCli
 				return err
 			}
 		} else {
-			deferredHeadersForCopy = append(deferredHeadersForCopy, deferredHeader{headerSHA256, index})
+			deferredHeadersForCopy = append(deferredHeadersForCopy, deferredHeader{header.FilePath, headerSHA256, index})
 		}
 	}
 
-	attemptsLeft := 10
-	for len(deferredHeadersForCopy) != 0 && attemptsLeft >= 0 {
-		// TODO Why second?
-		time.Sleep(time.Second)
-		attemptsLeft--
-
-		newDeferredHeadersForCopy := make([]deferredHeader, 0, len(deferredHeadersForCopy))
-		for _, h := range deferredHeadersForCopy {
-			header := in.ClientHeaders[h.index]
-			linkCreated, err := s.tryLinkHeaderFromCache(sysRoot, header.FilePath, h.sha256sum)
-			if err != nil {
-				return err
-			}
-			if !linkCreated {
-				newDeferredHeadersForCopy = append(newDeferredHeadersForCopy, h)
-			}
-		}
-		deferredHeadersForCopy = newDeferredHeadersForCopy
+	_, stillDeferred, err := s.waitDeferredHeaders(sysRoot, deferredHeadersForCopy)
+	if err != nil {
+		return err
 	}
 
-	for _, h := range deferredHeadersForCopy {
-		header := in.ClientHeaders[h.index]
-		linkCreated, err := s.tryLinkHeaderFromCache(sysRoot, header.FilePath, h.sha256sum)
-		if err != nil {
-			return err
-		}
-		if linkCreated {
-			continue
-		}
-		s.UploadingHeaders.ForceStartHeaderProcessing(header.FilePath, h.sha256sum)
+	for _, h := range stillDeferred {
+		s.UploadingHeaders.ForceStartHeaderProcessing(h.headerPath, h.sha256sum)
 		if err := out.Send(&pb.CopyHeadersFromClientCacheReply{MissedHeaderIndex: int32(h.index), FullCopyRequired: true}); err != nil {
-			s.UploadingHeaders.FinishHeaderProcessing(header.FilePath, h.sha256sum)
+			s.UploadingHeaders.FinishHeaderProcessing(h.headerPath, h.sha256sum)
 			return err
 		}
 	}
@@ -147,7 +155,7 @@ func (s *CompilationServer) CopyHeadersFromClientCache(in *pb.CopyHeadersFromCli
 func (s *CompilationServer) CopyHeadersFromGlobalCache(in *pb.CopyHeadersFromGlobalCacheRequest, out pb.CompilationService_CopyHeadersFromGlobalCacheServer) error {
 	sysRoot := s.makeSysRoot(in.ClientID)
 	headerCache := s.ClientCache.GetHeaderCache(in.ClientID.MachineID, in.ClientID.MacAddress, in.ClientID.UserName)
-	deferredHeadersForCopy := make([]int, 0, 16)
+	deferredHeadersForCopy := make([]deferredHeader, 0, 16)
 	for index, header := range in.GlobalHeaders {
 		linkCreated, err := s.tryLinkHeaderFromCache(sysRoot, header.ClientMeta.FilePath, header.SHA256Sum)
 		if err != nil {
@@ -162,44 +170,22 @@ func (s *CompilationServer) CopyHeadersFromGlobalCache(in *pb.CopyHeadersFromGlo
 					return err
 				}
 			} else {
-				deferredHeadersForCopy = append(deferredHeadersForCopy, index)
+				deferredHeadersForCopy = append(deferredHeadersForCopy, deferredHeader{header.ClientMeta.FilePath, header.SHA256Sum, index})
 			}
 		}
 	}
 
-	attemptsLeft := 10
-	for len(deferredHeadersForCopy) != 0 && attemptsLeft >= 0 {
-		// TODO Why second?
-		time.Sleep(time.Second)
-		attemptsLeft--
-
-		newDeferredHeadersForCopy := make([]int, 0, len(deferredHeadersForCopy))
-		for _, index := range deferredHeadersForCopy {
-			header := in.GlobalHeaders[index]
-			linkCreated, err := s.tryLinkHeaderFromCache(sysRoot, header.ClientMeta.FilePath, header.SHA256Sum)
-			if err != nil {
-				return err
-			}
-			if !linkCreated {
-				newDeferredHeadersForCopy = append(newDeferredHeadersForCopy, index)
-			}
-		}
-		deferredHeadersForCopy = newDeferredHeadersForCopy
+	done, stillDeferred, err := s.waitDeferredHeaders(sysRoot, deferredHeadersForCopy)
+	if err != nil {
+		return err
 	}
-
-	for _, index := range deferredHeadersForCopy {
-		header := in.GlobalHeaders[index]
-		linkCreated, err := s.tryLinkHeaderFromCache(sysRoot, header.ClientMeta.FilePath, header.SHA256Sum)
-		if err != nil {
-			return err
-		}
-		if linkCreated {
-			headerCache.SetHeaderSHA256(header.ClientMeta.FilePath, header.ClientMeta.MTime, header.SHA256Sum)
-			continue
-		}
-		s.UploadingHeaders.ForceStartHeaderProcessing(header.ClientMeta.FilePath, header.SHA256Sum)
-		if err := out.Send(&pb.CopyHeadersFromGlobalCacheReply{MissedHeaderIndex: int32(index)}); err != nil {
-			s.UploadingHeaders.FinishHeaderProcessing(header.ClientMeta.FilePath, header.SHA256Sum)
+	for _, h := range done {
+		headerCache.SetHeaderSHA256(h.headerPath, in.GlobalHeaders[h.index].ClientMeta.MTime, h.sha256sum)
+	}
+	for _, h := range stillDeferred {
+		s.UploadingHeaders.ForceStartHeaderProcessing(h.headerPath, h.sha256sum)
+		if err := out.Send(&pb.CopyHeadersFromGlobalCacheReply{MissedHeaderIndex: int32(h.index)}); err != nil {
+			s.UploadingHeaders.FinishHeaderProcessing(h.headerPath, h.sha256sum)
 			return err
 		}
 	}

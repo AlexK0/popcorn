@@ -3,6 +3,8 @@ package client
 import (
 	"errors"
 	"hash/fnv"
+	"sync"
+	"sync/atomic"
 
 	pb "github.com/AlexK0/popcorn/internal/api/proto/v1"
 	"github.com/AlexK0/popcorn/internal/common"
@@ -11,36 +13,28 @@ import (
 // ErrNoAvailableHosts ...
 var ErrNoAvailableHosts = errors.New("no available hosts for connection")
 
-type asyncHeaderResult struct {
-	headerMeta *pb.HeaderClientMeta
-	err        error
-}
-
-func makeHeaderAsync(header string, headerChannel chan<- asyncHeaderResult) {
-	var result asyncHeaderResult
-	result.headerMeta, result.err = MakeClientHeaderMeta(header)
-	headerChannel <- result
+func makeHeaderAsync(header string, destMeta **pb.HeaderClientMeta, destErr *error, errorFlag *int32, wg *sync.WaitGroup) {
+	var err error
+	if *destMeta, err = MakeClientHeaderMeta(header); err != nil {
+		if atomic.SwapInt32(errorFlag, 1) == 0 {
+			*destErr = err
+		}
+	}
+	wg.Done()
 }
 
 func readHeadersMeta(headers []string) ([]*pb.HeaderClientMeta, error) {
-	headerChannel := make(chan asyncHeaderResult)
-	for _, header := range headers {
-		go makeHeaderAsync(header, headerChannel)
-	}
+	wg := sync.WaitGroup{}
+	wg.Add(len(headers))
 
-	cachedHeaders := make([]*pb.HeaderClientMeta, len(headers))
 	var err error
-	for i := range headers {
-		result := <-headerChannel
-		cachedHeaders[i] = result.headerMeta
-		if result.err != nil {
-			err = result.err
-		}
+	var errorFlag int32
+	cachedHeaders := make([]*pb.HeaderClientMeta, len(headers))
+	for i, header := range headers {
+		go makeHeaderAsync(header, &cachedHeaders[i], &err, &errorFlag, &wg)
 	}
-	if err != nil {
-		return nil, err
-	}
-	return cachedHeaders, nil
+	wg.Wait()
+	return cachedHeaders, err
 }
 
 func chooseServerNumber(localCompiler *LocalCompiler, hostsCount int) uint64 {
