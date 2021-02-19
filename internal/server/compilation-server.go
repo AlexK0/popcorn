@@ -241,16 +241,30 @@ func (s *CompilationServer) CompileSource(ctx context.Context, in *pb.CompileSou
 
 	defer removeDir(sysRootPath, in.ClearEnvironmentAfterBuild)
 
-	inFile := path.Join(sysRootPath, in.FilePath)
-	err := common.WriteFile(inFile, in.SourceBody)
+	inFileFull := path.Join(sysRootPath, in.FilePath)
+	err := common.WriteFile(inFileFull, in.SourceBody)
 	if err != nil {
 		return nil, fmt.Errorf("Can't write source for compilation: %v", err)
 	}
 
+	compilerArgs := make([]string, 0, 3+len(in.CompilerArgs))
+	for i := 0; i < len(in.CompilerArgs); i++ {
+		arg := in.CompilerArgs[i]
+		if (arg == "-I" || arg == "-isystem" || arg == "-iquote") && i+1 < len(in.CompilerArgs) {
+			includeDir := in.CompilerArgs[i+1]
+			includeDirFull := path.Join(sysRootPath, includeDir)
+			if _, err = os.Stat(includeDirFull); err != nil && os.IsNotExist(err) {
+				i++
+				continue
+			}
+			in.CompilerArgs[i+1] = strings.TrimLeft(includeDir, "/")
+		}
+		compilerArgs = append(compilerArgs, arg)
+	}
+	inFile := strings.TrimLeft(in.FilePath, "/")
 	outFile := inFile + ".o"
-	compilerArgs := make([]string, 0, 7+len(in.CompilerArgs))
-	compilerArgs = append(compilerArgs, "-isysroot", ".", "-o", outFile, strings.TrimLeft(in.FilePath, "/"))
-	compilerArgs = append(compilerArgs, in.CompilerArgs...)
+	compilerArgs = append(compilerArgs, inFile, "-o", outFile)
+
 	compilerProc := exec.Command(in.Compiler, compilerArgs...)
 	compilerProc.Dir = sysRootPath
 	var compilerStderr, compilerStdout bytes.Buffer
@@ -259,12 +273,13 @@ func (s *CompilationServer) CompileSource(ctx context.Context, in *pb.CompileSou
 
 	common.LogInfo("Launch compiler:", compilerProc.Args)
 	_ = compilerProc.Run()
-	defer os.Remove(inFile)
-	defer os.Remove(outFile)
+
+	outFileFull := path.Join(sysRootPath, outFile)
+	defer os.Remove(outFileFull)
 
 	var compiledSource []byte
 	if compilerProc.ProcessState.ExitCode() == 0 {
-		if compiledSource, err = ioutil.ReadFile(outFile); err != nil {
+		if compiledSource, err = ioutil.ReadFile(outFileFull); err != nil {
 			return nil, fmt.Errorf("Can't read compiled source: %v", err)
 		}
 	}

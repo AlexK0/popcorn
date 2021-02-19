@@ -63,7 +63,7 @@ func MakeRemoteCompiler(localCompiler *LocalCompiler, serverHostPort string) (*R
 		name:          localCompiler.name,
 		inFile:        localCompiler.inFile,
 		outFile:       localCompiler.outFile,
-		remoteCmdArgs: localCompiler.MakeRemoteCmd("="),
+		remoteCmdArgs: localCompiler.MakeRemoteCmd(),
 
 		grpcClient: grpcClient,
 		clientID:   clientID,

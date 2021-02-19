@@ -171,20 +171,20 @@ func (compiler *LocalCompiler) addIncludeDirsFrom(rawOut string) {
 }
 
 // MakeRemoteCmd ...
-func (compiler *LocalCompiler) MakeRemoteCmd(dirsPrefix string, extraArgs ...string) []string {
+func (compiler *LocalCompiler) MakeRemoteCmd(extraArgs ...string) []string {
 	compiler.dirsIquote = common.NormalizePaths(compiler.dirsIquote)
 	compiler.dirsI = common.NormalizePaths(compiler.dirsI)
 	compiler.dirsIsystem = common.NormalizePaths(compiler.dirsIsystem)
 
 	cmd := make([]string, 0, 2*(len(compiler.dirsIquote)+len(compiler.dirsI)+len(compiler.dirsIsystem))+len(compiler.remoteCmdArgs)+len(extraArgs))
 	for _, dir := range compiler.dirsIquote {
-		cmd = append(cmd, "-iquote", dirsPrefix+dir)
+		cmd = append(cmd, "-iquote", dir)
 	}
 	for _, dir := range compiler.dirsI {
-		cmd = append(cmd, "-I", dirsPrefix+dir)
+		cmd = append(cmd, "-I", dir)
 	}
 	for _, dir := range compiler.dirsIsystem {
-		cmd = append(cmd, "-isystem", dirsPrefix+dir)
+		cmd = append(cmd, "-isystem", dir)
 	}
 
 	cmd = append(cmd, compiler.remoteCmdArgs...)
@@ -193,7 +193,7 @@ func (compiler *LocalCompiler) MakeRemoteCmd(dirsPrefix string, extraArgs ...str
 
 // CollectHeadersAndUpdateIncludeDirs ...
 func (compiler *LocalCompiler) CollectHeadersAndUpdateIncludeDirs() ([]string, error) {
-	cmd := compiler.MakeRemoteCmd("", compiler.inFile, "-o", "/dev/stdout", "-M", "-Wp,-v")
+	cmd := compiler.MakeRemoteCmd(compiler.inFile, "-o", "/dev/stdout", "-M", "-Wp,-v")
 	compilerProc := exec.Command(compiler.name, cmd...)
 	var compilerStdout, compilerStderr bytes.Buffer
 	compilerProc.Stdout = &compilerStdout
