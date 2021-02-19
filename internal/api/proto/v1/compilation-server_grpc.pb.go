@@ -22,6 +22,7 @@ type CompilationServiceClient interface {
 	CopyHeadersFromGlobalCache(ctx context.Context, in *CopyHeadersFromGlobalCacheRequest, opts ...grpc.CallOption) (CompilationService_CopyHeadersFromGlobalCacheClient, error)
 	CopyHeader(ctx context.Context, in *CopyHeaderRequest, opts ...grpc.CallOption) (*CopyHeaderReply, error)
 	CompileSource(ctx context.Context, in *CompileSourceRequest, opts ...grpc.CallOption) (*CompileSourceReply, error)
+	ClearEnvironment(ctx context.Context, in *ClearEnvironmentRequest, opts ...grpc.CallOption) (*ClearEnvironmentReply, error)
 	Status(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (*StatusReply, error)
 	UpdateServer(ctx context.Context, in *UpdateServerRequest, opts ...grpc.CallOption) (*UpdateServerReply, error)
 }
@@ -116,6 +117,15 @@ func (c *compilationServiceClient) CompileSource(ctx context.Context, in *Compil
 	return out, nil
 }
 
+func (c *compilationServiceClient) ClearEnvironment(ctx context.Context, in *ClearEnvironmentRequest, opts ...grpc.CallOption) (*ClearEnvironmentReply, error) {
+	out := new(ClearEnvironmentReply)
+	err := c.cc.Invoke(ctx, "/popcorn.CompilationService/ClearEnvironment", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *compilationServiceClient) Status(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (*StatusReply, error) {
 	out := new(StatusReply)
 	err := c.cc.Invoke(ctx, "/popcorn.CompilationService/Status", in, out, opts...)
@@ -142,6 +152,7 @@ type CompilationServiceServer interface {
 	CopyHeadersFromGlobalCache(*CopyHeadersFromGlobalCacheRequest, CompilationService_CopyHeadersFromGlobalCacheServer) error
 	CopyHeader(context.Context, *CopyHeaderRequest) (*CopyHeaderReply, error)
 	CompileSource(context.Context, *CompileSourceRequest) (*CompileSourceReply, error)
+	ClearEnvironment(context.Context, *ClearEnvironmentRequest) (*ClearEnvironmentReply, error)
 	Status(context.Context, *StatusRequest) (*StatusReply, error)
 	UpdateServer(context.Context, *UpdateServerRequest) (*UpdateServerReply, error)
 	mustEmbedUnimplementedCompilationServiceServer()
@@ -162,6 +173,9 @@ func (UnimplementedCompilationServiceServer) CopyHeader(context.Context, *CopyHe
 }
 func (UnimplementedCompilationServiceServer) CompileSource(context.Context, *CompileSourceRequest) (*CompileSourceReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CompileSource not implemented")
+}
+func (UnimplementedCompilationServiceServer) ClearEnvironment(context.Context, *ClearEnvironmentRequest) (*ClearEnvironmentReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ClearEnvironment not implemented")
 }
 func (UnimplementedCompilationServiceServer) Status(context.Context, *StatusRequest) (*StatusReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Status not implemented")
@@ -260,6 +274,24 @@ func _CompilationService_CompileSource_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CompilationService_ClearEnvironment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ClearEnvironmentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CompilationServiceServer).ClearEnvironment(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/popcorn.CompilationService/ClearEnvironment",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CompilationServiceServer).ClearEnvironment(ctx, req.(*ClearEnvironmentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _CompilationService_Status_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(StatusRequest)
 	if err := dec(in); err != nil {
@@ -310,6 +342,10 @@ var CompilationService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CompileSource",
 			Handler:    _CompilationService_CompileSource_Handler,
+		},
+		{
+			MethodName: "ClearEnvironment",
+			Handler:    _CompilationService_ClearEnvironment_Handler,
 		},
 		{
 			MethodName: "Status",

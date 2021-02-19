@@ -160,7 +160,7 @@ func (compiler *LocalCompiler) addIncludeDirsFrom(rawOut string) {
 			case ProcessDirsIquote:
 				compiler.dirsIquote = append(compiler.dirsIquote, line)
 			case ProcessDirsI:
-				if strings.HasPrefix(line, "/usr") {
+				if strings.HasPrefix(line, "/usr/") {
 					compiler.dirsIsystem = append(compiler.dirsIsystem, line)
 				} else {
 					compiler.dirsI = append(compiler.dirsI, line)

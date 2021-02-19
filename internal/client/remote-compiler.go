@@ -19,8 +19,9 @@ type RemoteCompiler struct {
 	remoteCmdArgs []string
 
 	grpcClient *GRPCClient
+	clientID   *pb.ClientIdentifier
 
-	clientID *pb.ClientIdentifier
+	envCleanupRequired bool
 }
 
 func makeClientID() (*pb.ClientIdentifier, error) {
@@ -72,7 +73,8 @@ func MakeRemoteCompiler(localCompiler *LocalCompiler, serverHostPort string) (*R
 
 func (compiler *RemoteCompiler) copyHeaderAsync(headersFullCopy *pb.HeaderFullData, errorChannel chan<- error) {
 	_, err := compiler.grpcClient.Client.CopyHeader(
-		compiler.grpcClient.CallContext, &pb.CopyHeaderRequest{
+		compiler.grpcClient.CallContext,
+		&pb.CopyHeaderRequest{
 			ClientID: compiler.clientID,
 			Header:   headersFullCopy,
 		})
@@ -81,8 +83,10 @@ func (compiler *RemoteCompiler) copyHeaderAsync(headersFullCopy *pb.HeaderFullDa
 
 // SetupEnvironment ...
 func (compiler *RemoteCompiler) SetupEnvironment(headers []*pb.HeaderClientMeta) error {
+	compiler.envCleanupRequired = true
 	clientCacheStream, err := compiler.grpcClient.Client.CopyHeadersFromClientCache(
-		compiler.grpcClient.CallContext, &pb.CopyHeadersFromClientCacheRequest{
+		compiler.grpcClient.CallContext,
+		&pb.CopyHeadersFromClientCacheRequest{
 			ClientID:                   compiler.clientID,
 			ClientHeaders:              headers,
 			ClearEnvironmentBeforeCopy: true,
@@ -120,7 +124,8 @@ func (compiler *RemoteCompiler) SetupEnvironment(headers []*pb.HeaderClientMeta)
 	}
 
 	globalCacheStream, err := compiler.grpcClient.Client.CopyHeadersFromGlobalCache(
-		compiler.grpcClient.CallContext, &pb.CopyHeadersFromGlobalCacheRequest{
+		compiler.grpcClient.CallContext,
+		&pb.CopyHeadersFromGlobalCacheRequest{
 			ClientID:      compiler.clientID,
 			GlobalHeaders: headersForGlobalCache,
 		})
@@ -157,8 +162,10 @@ func (compiler *RemoteCompiler) CompileSource() (retCode int, stdout []byte, std
 	if err != nil {
 		return 0, nil, nil, err
 	}
+	compiler.envCleanupRequired = false
 	res, err := compiler.grpcClient.Client.CompileSource(
-		compiler.grpcClient.CallContext, &pb.CompileSourceRequest{
+		compiler.grpcClient.CallContext,
+		&pb.CompileSourceRequest{
 			ClientID:                   compiler.clientID,
 			FilePath:                   compiler.inFile,
 			Compiler:                   compiler.name,
@@ -182,5 +189,13 @@ func (compiler *RemoteCompiler) CompileSource() (retCode int, stdout []byte, std
 
 // Clear ...
 func (compiler *RemoteCompiler) Clear() {
+	if compiler.envCleanupRequired {
+		_, _ = compiler.grpcClient.Client.ClearEnvironment(
+			compiler.grpcClient.CallContext,
+			&pb.ClearEnvironmentRequest{
+				ClientID: compiler.clientID,
+			})
+	}
+	compiler.envCleanupRequired = false
 	compiler.grpcClient.Clear()
 }

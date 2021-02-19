@@ -291,6 +291,15 @@ func (s *CompilationServer) CompileSource(ctx context.Context, in *pb.CompileSou
 	}, nil
 }
 
+// ClearEnvironment ...
+func (s *CompilationServer) ClearEnvironment(ctx context.Context, in *pb.ClearEnvironmentRequest) (*pb.ClearEnvironmentReply, error) {
+	sysRoot := s.makeSysRoot(in.ClientID)
+	if err := os.RemoveAll(sysRoot); err != nil {
+		return nil, err
+	}
+	return &pb.ClearEnvironmentReply{}, nil
+}
+
 // Status ...
 func (s *CompilationServer) Status(ctx context.Context, in *pb.StatusRequest) (*pb.StatusReply, error) {
 	var m runtime.MemStats

@@ -12,8 +12,9 @@ service CompilationService {
 
     rpc CompileSource (CompileSourceRequest) returns (CompileSourceReply) {}
 
-    rpc Status(StatusRequest) returns (StatusReply) {}
+    rpc ClearEnvironment(ClearEnvironmentRequest) returns (ClearEnvironmentReply) {}
 
+    rpc Status(StatusRequest) returns (StatusReply) {}
     rpc UpdateServer(UpdateServerRequest) returns (UpdateServerReply) {}
 }
 
@@ -80,6 +81,13 @@ message CompileSourceReply {
     bytes CompiledSource = 2;
     bytes CompilerStdout = 3;
     bytes CompilerStderr = 4;
+}
+
+message ClearEnvironmentRequest {
+    ClientIdentifier ClientID = 1;
+}
+
+message ClearEnvironmentReply {
 }
 
 message StatusRequest {}
