@@ -42,10 +42,9 @@ func main() {
 	version := flag.Bool("version", false, "Show version and exit.")
 	flag.StringVar(&settings.Host, "host", "0.0.0.0", "Binding address.")
 	flag.IntVar(&settings.Port, "port", 43210, "Listening port.")
-	flag.StringVar(&settings.UpdatePassword, "update-password", "", "Secret password for remote update.")
+	flag.StringVar(&settings.Password, "password", "", "Secret password for remote control.")
 	flag.StringVar(&settings.WorkingDir, "working-dir", "/tmp/popcorn-server", "Directory for saving and compiling incoming files.")
 	flag.StringVar(&settings.LogFileName, "log-filename", "", "Logger file.")
-	flag.IntVar(&settings.LogVerbosity, "log-verbosity", 0, "Logger verbosity level.")
 	flag.StringVar(&settings.LogSeverity, "log-severity", common.WarningSeverity, "Logger severity level.")
 
 	flag.Parse()
@@ -59,7 +58,7 @@ func main() {
 		common.LogFatal("Can't create working directory", settings.WorkingDir)
 	}
 
-	if err := common.LoggerInit("popcorn-server", settings.LogFileName, settings.LogSeverity, settings.LogVerbosity); err != nil {
+	if err := common.LoggerInit("popcorn-server", settings.LogFileName, settings.LogSeverity); err != nil {
 		common.LogFatal("Can't init logger", err)
 	}
 
@@ -72,11 +71,11 @@ func main() {
 
 	grpcServer := grpc.NewServer(grpc.MaxRecvMsgSize(1024*1204*1024), grpc.MaxSendMsgSize(1024*1204*1024))
 	compilationServer := &server.CompilationServer{
-		StartTime:      time.Now(),
-		WorkingDir:     settings.WorkingDir,
-		HeaderCacheDir: path.Join(settings.WorkingDir, "header-cache"),
-		GRPCServer:     grpcServer,
-		UpdatePassword: settings.UpdatePassword,
+		StartTime:             time.Now(),
+		WorkingDir:            settings.WorkingDir,
+		HeaderCacheDir:        path.Join(settings.WorkingDir, "header-cache"),
+		GRPCServer:            grpcServer,
+		RemoteControlPassword: settings.Password,
 
 		ClientCache:      server.MakeClientCacheMap(),
 		UploadingHeaders: server.MakeProcessingHeaders(),

@@ -9,6 +9,8 @@ import (
 )
 
 var (
+	logFileName = ""
+
 	logComponent = grpclog.Component("unknown")
 	// ErrUnknownSeverity ...
 	ErrUnknownSeverity = errors.New("Unknown logger severity")
@@ -22,7 +24,7 @@ var (
 )
 
 func init() {
-	_ = LoggerInit("unknown", "", InfoSeverity, 2)
+	_ = LoggerInit("unknown", "", InfoSeverity)
 }
 
 func getLogFile(logFile string) (*os.File, error) {
@@ -33,7 +35,7 @@ func getLogFile(logFile string) (*os.File, error) {
 }
 
 // LoggerInit ...
-func LoggerInit(component string, logFile string, severity string, verbosityLevel int) error {
+func LoggerInit(component string, logFile string, severity string) error {
 	file, err := getLogFile(logFile)
 	if err != nil {
 		return err
@@ -41,17 +43,23 @@ func LoggerInit(component string, logFile string, severity string, verbosityLeve
 
 	switch severity {
 	case InfoSeverity:
-		grpclog.SetLoggerV2(grpclog.NewLoggerV2WithVerbosity(file, ioutil.Discard, ioutil.Discard, verbosityLevel))
+		grpclog.SetLoggerV2(grpclog.NewLoggerV2WithVerbosity(file, ioutil.Discard, ioutil.Discard, 2))
 	case WarningSeverity:
-		grpclog.SetLoggerV2(grpclog.NewLoggerV2WithVerbosity(ioutil.Discard, file, ioutil.Discard, verbosityLevel))
+		grpclog.SetLoggerV2(grpclog.NewLoggerV2WithVerbosity(ioutil.Discard, file, ioutil.Discard, 2))
 	case ErrorSeverity:
-		grpclog.SetLoggerV2(grpclog.NewLoggerV2WithVerbosity(ioutil.Discard, ioutil.Discard, file, verbosityLevel))
+		grpclog.SetLoggerV2(grpclog.NewLoggerV2WithVerbosity(ioutil.Discard, ioutil.Discard, file, 2))
 	default:
 		return ErrUnknownSeverity
 	}
 
+	logFileName = logFile
 	logComponent = grpclog.Component(component)
 	return nil
+}
+
+// GetLogFileName ...
+func GetLogFileName() string {
+	return logFileName
 }
 
 // LogInfo ...

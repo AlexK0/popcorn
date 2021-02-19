@@ -3,9 +3,12 @@ package client
 import (
 	"fmt"
 	"io/ioutil"
+	"path"
+	"strings"
 	"time"
 
 	pb "github.com/AlexK0/popcorn/internal/api/proto/v1"
+	"github.com/AlexK0/popcorn/internal/common"
 )
 
 type checkServerRes struct {
@@ -72,41 +75,14 @@ func CheckServers(settings *Settings) {
 	}
 }
 
-type updateServerRes struct {
-	updateResult   *pb.UpdateServerReply
+type manageServerRes struct {
 	err            error
 	serverHostPort string
 }
 
-func updateServer(newServerBinaryPath string, updatePassword string, serverHostPort string, updateChannel chan<- updateServerRes) {
-	grpcClient, err := MakeGRPCClient(serverHostPort)
-	if err != nil {
-		updateChannel <- updateServerRes{err: err, serverHostPort: serverHostPort}
-		return
-	}
-	defer grpcClient.Clear()
-
-	serverBinary, err := ioutil.ReadFile(newServerBinaryPath)
-	if err != nil {
-		updateChannel <- updateServerRes{err: err, serverHostPort: serverHostPort}
-		return
-	}
-	updateResult, err := grpcClient.Client.UpdateServer(
-		grpcClient.CallContext,
-		&pb.UpdateServerRequest{NewBinary: serverBinary, Password: updatePassword})
-	updateChannel <- updateServerRes{updateResult: updateResult, err: err, serverHostPort: serverHostPort}
-}
-
-// UpdateServers ...
-func UpdateServers(settings *Settings, newServerBinaryPath string, updatePassword string) {
-	updateChannel := make(chan updateServerRes)
-
-	for _, serverHostPort := range settings.Servers {
-		go updateServer(newServerBinaryPath, updatePassword, serverHostPort, updateChannel)
-	}
-
-	for range settings.Servers {
-		res := <-updateChannel
+func waitServerResAndPrintStatus(serversCount int, manageChannel <-chan manageServerRes) {
+	for i := 0; i != serversCount; i++ {
+		res := <-manageChannel
 		fmt.Printf("Server \033[36m%s\033[0m: ", res.serverHostPort)
 		if res.err != nil {
 			fmt.Println("\033[31merror\033[0m")
@@ -115,4 +91,81 @@ func UpdateServers(settings *Settings, newServerBinaryPath string, updatePasswor
 			fmt.Println("\033[32mdone\033[0m")
 		}
 	}
+}
+
+func updateServer(newServerBinaryPath string, password string, serverHostPort string, manageChannel chan<- manageServerRes) {
+	grpcClient, err := MakeGRPCClient(serverHostPort)
+	if err != nil {
+		manageChannel <- manageServerRes{err: err, serverHostPort: serverHostPort}
+		return
+	}
+	defer grpcClient.Clear()
+
+	serverBinary, err := ioutil.ReadFile(newServerBinaryPath)
+	if err != nil {
+		manageChannel <- manageServerRes{err: err, serverHostPort: serverHostPort}
+		return
+	}
+	_, err = grpcClient.Client.UpdateServer(
+		grpcClient.CallContext,
+		&pb.UpdateServerRequest{NewBinary: serverBinary, Password: password})
+	manageChannel <- manageServerRes{err: err, serverHostPort: serverHostPort}
+}
+
+// UpdateServers ...
+func UpdateServers(settings *Settings, newServerBinaryPath string, password string) {
+	manageChannel := make(chan manageServerRes)
+	for _, serverHostPort := range settings.Servers {
+		go updateServer(newServerBinaryPath, password, serverHostPort, manageChannel)
+	}
+	waitServerResAndPrintStatus(len(settings.Servers), manageChannel)
+}
+
+func restartServer(password string, serverHostPort string, manageChannel chan<- manageServerRes) {
+	grpcClient, err := MakeGRPCClient(serverHostPort)
+	if err != nil {
+		manageChannel <- manageServerRes{err: err, serverHostPort: serverHostPort}
+		return
+	}
+	defer grpcClient.Clear()
+
+	_, err = grpcClient.Client.RestartServer(
+		grpcClient.CallContext,
+		&pb.RestartServerRequest{Password: password})
+	manageChannel <- manageServerRes{err: err, serverHostPort: serverHostPort}
+}
+
+// RestartServers ...
+func RestartServers(settings *Settings, password string) {
+	manageChannel := make(chan manageServerRes)
+	for _, serverHostPort := range settings.Servers {
+		go restartServer(password, serverHostPort, manageChannel)
+	}
+	waitServerResAndPrintStatus(len(settings.Servers), manageChannel)
+}
+
+func copyServerLog(logsDir string, password string, serverHostPort string, manageChannel chan<- manageServerRes) {
+	grpcClient, err := MakeGRPCClient(serverHostPort)
+	if err != nil {
+		manageChannel <- manageServerRes{err: err, serverHostPort: serverHostPort}
+		return
+	}
+	defer grpcClient.Clear()
+	res, err := grpcClient.Client.DumpServerLog(
+		grpcClient.CallContext,
+		&pb.DumpServerLogRequest{Password: password})
+	if err == nil {
+		logFileName := path.Join(logsDir, strings.ReplaceAll(serverHostPort, ":", "_")+".log")
+		err = common.WriteFile(logFileName, res.LogData)
+	}
+	manageChannel <- manageServerRes{err: err, serverHostPort: serverHostPort}
+}
+
+// CopyLogsFromServers ...
+func CopyLogsFromServers(settings *Settings, logsDir string, password string) {
+	manageChannel := make(chan manageServerRes)
+	for _, serverHostPort := range settings.Servers {
+		go copyServerLog(logsDir, password, serverHostPort, manageChannel)
+	}
+	waitServerResAndPrintStatus(len(settings.Servers), manageChannel)
 }

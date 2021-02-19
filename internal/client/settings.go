@@ -2,7 +2,6 @@ package client
 
 import (
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/AlexK0/popcorn/internal/common"
@@ -10,10 +9,9 @@ import (
 
 // Settings ...
 type Settings struct {
-	Servers      []string
-	LogFileName  string
-	LogVerbosity int
-	LogSeverity  string
+	Servers     []string
+	LogFileName string
+	LogSeverity string
 }
 
 func getEnvValue(envVar string, key string) string {
@@ -36,8 +34,6 @@ func ReadClientSettings() *Settings {
 			}
 		} else if value := getEnvValue(envVar, "POPCORN_LOG_FILENAME="); len(value) != 0 {
 			settings.LogFileName = value
-		} else if value := getEnvValue(envVar, "POPCORN_LOG_VERBOSITY="); len(value) != 0 {
-			settings.LogVerbosity, _ = strconv.Atoi(value)
 		} else if value := getEnvValue(envVar, "POPCORN_LOG_SEVERITY="); len(value) != 0 {
 			settings.LogSeverity = value
 		}

@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"os/exec"
 	"path"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -29,10 +31,10 @@ type CompilationServer struct {
 	HeaderCacheDir string
 
 	GRPCServer                 *grpc.Server
-	UpdatePassword             string
+	RemoteControlPassword      string
 	NewPopcornServerBinaryPath string
 
-	updateLock sync.Mutex
+	remoteControlLock sync.Mutex
 
 	ClientCache      *ClientCacheMap
 	UploadingHeaders *ProcessingHeadersMap
@@ -324,17 +326,23 @@ func waitAndStop(grpcServer *grpc.Server) {
 	grpcServer.GracefulStop()
 }
 
+func (s *CompilationServer) checkPassword(password string) error {
+	if len(s.RemoteControlPassword) == 0 {
+		return fmt.Errorf("Remote control disabled")
+	}
+	if s.RemoteControlPassword != password {
+		s.RemoteControlPassword = ""
+		return fmt.Errorf("Invalid password, disabling remote control")
+	}
+	return nil
+}
+
 // UpdateServer ...
 func (s *CompilationServer) UpdateServer(ctx context.Context, in *pb.UpdateServerRequest) (*pb.UpdateServerReply, error) {
-	s.updateLock.Lock()
-	defer s.updateLock.Unlock()
-
-	if len(s.UpdatePassword) == 0 {
-		return nil, fmt.Errorf("Remote update disabled")
-	}
-	if s.UpdatePassword != in.Password {
-		s.UpdatePassword = ""
-		return nil, fmt.Errorf("Invalid password, disabling remote updates")
+	s.remoteControlLock.Lock()
+	defer s.remoteControlLock.Unlock()
+	if err := s.checkPassword(in.Password); err != nil {
+		return nil, err
 	}
 
 	newServerBinaryPath := path.Join(s.WorkingDir, "new-popcorn-server")
@@ -344,4 +352,55 @@ func (s *CompilationServer) UpdateServer(ctx context.Context, in *pb.UpdateServe
 	s.NewPopcornServerBinaryPath = newServerBinaryPath
 	go waitAndStop(s.GRPCServer)
 	return &pb.UpdateServerReply{}, nil
+}
+
+// RestartServer ...
+func (s *CompilationServer) RestartServer(ctx context.Context, in *pb.RestartServerRequest) (*pb.RestartServerReply, error) {
+	s.remoteControlLock.Lock()
+	defer s.remoteControlLock.Unlock()
+	if err := s.checkPassword(in.Password); err != nil {
+		return nil, err
+	}
+
+	serverBinaryPath, err := filepath.EvalSymlinks("/proc/self/exe")
+	if err != nil {
+		return nil, fmt.Errorf("Can't get popcorn-server bin path: %v", err)
+	}
+	s.NewPopcornServerBinaryPath = serverBinaryPath
+	go waitAndStop(s.GRPCServer)
+	return &pb.RestartServerReply{}, nil
+}
+
+// DumpServerLog ...
+func (s *CompilationServer) DumpServerLog(ctx context.Context, in *pb.DumpServerLogRequest) (*pb.DumpServerLogReply, error) {
+	s.remoteControlLock.Lock()
+	defer s.remoteControlLock.Unlock()
+	if err := s.checkPassword(in.Password); err != nil {
+		return nil, err
+	}
+
+	logFilename := common.GetLogFileName()
+	if len(logFilename) == 0 {
+		return nil, fmt.Errorf("Server is working without log file")
+	}
+
+	if in.BytesLimit == 0 {
+		if logData, err := ioutil.ReadFile(logFilename); err != nil {
+			return nil, fmt.Errorf("Can't read popcorn-server log file: %v", err)
+		} else {
+			return &pb.DumpServerLogReply{LogData: logData}, nil
+		}
+	}
+
+	f, err := os.Open(logFilename)
+	if err != nil {
+		return nil, fmt.Errorf("Can't open popcorn-server log file: %v", err)
+	}
+	defer f.Close()
+
+	logBuffer := bytes.Buffer{}
+	if _, err := io.CopyN(&logBuffer, f, int64(in.BytesLimit)); err != nil {
+		return nil, fmt.Errorf("Can't read data from popcorn-server log file: %v", err)
+	}
+	return &pb.DumpServerLogReply{LogData: logBuffer.Bytes()}, nil
 }

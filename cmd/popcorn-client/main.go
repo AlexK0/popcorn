@@ -10,15 +10,15 @@ import (
 	"github.com/AlexK0/popcorn/internal/common"
 )
 
-func mainWithRetCode(settings *client.Settings) (retCode int, stdout []byte, stderr []byte) {
-	return client.PerformCompilation(os.Args[1:], settings)
-}
-
 func main() {
+	runtime.GOMAXPROCS(2)
+
 	version := flag.Bool("version", false, "Show version and exit.")
 	checkServers := flag.Bool("check-servers", false, "Check servers status.")
-	updateServerNewBinaryPath := flag.String("update-servers", "", "Check servers status.")
-	updatePassword := flag.String("update-password", "", "Password for remote update.")
+	restartServer := flag.Bool("restart-servers", false, "Restart remote servers.")
+	updateServerNewBinaryPath := flag.String("update-servers", "", "Update remote servers.")
+	logsDir := flag.String("copy-logs", "", "Copy logs from remote servers.")
+	password := flag.String("password", "", "Password for managing remote servers.")
 
 	flag.Parse()
 
@@ -27,9 +27,8 @@ func main() {
 		os.Exit(0)
 	}
 
-	runtime.GOMAXPROCS(2)
 	settings := client.ReadClientSettings()
-	if err := common.LoggerInit("popcorn-client", settings.LogFileName, settings.LogSeverity, settings.LogVerbosity); err != nil {
+	if err := common.LoggerInit("popcorn-client", settings.LogFileName, settings.LogSeverity); err != nil {
 		common.LogFatal("Can't init logger", err)
 	}
 
@@ -39,7 +38,17 @@ func main() {
 	}
 
 	if len(*updateServerNewBinaryPath) != 0 {
-		client.UpdateServers(settings, *updateServerNewBinaryPath, *updatePassword)
+		client.UpdateServers(settings, *updateServerNewBinaryPath, *password)
+		os.Exit(0)
+	}
+
+	if *restartServer {
+		client.RestartServers(settings, *password)
+		os.Exit(0)
+	}
+
+	if len(*logsDir) != 0 {
+		client.CopyLogsFromServers(settings, *logsDir, *password)
 		os.Exit(0)
 	}
 
@@ -47,8 +56,7 @@ func main() {
 		common.LogFatal("Compiler line expected")
 	}
 
-	retCode, stdout, stderr := mainWithRetCode(settings)
-
+	retCode, stdout, stderr := client.PerformCompilation(os.Args[1:], settings)
 	os.Stdout.Write(stdout)
 	os.Stderr.Write(stderr)
 	os.Exit(retCode)

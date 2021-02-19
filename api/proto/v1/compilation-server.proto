@@ -16,6 +16,8 @@ service CompilationService {
 
     rpc Status(StatusRequest) returns (StatusReply) {}
     rpc UpdateServer(UpdateServerRequest) returns (UpdateServerReply) {}
+    rpc RestartServer(RestartServerRequest) returns (RestartServerReply) {}
+    rpc DumpServerLog(DumpServerLogRequest) returns (DumpServerLogReply) {}
 }
 
 message ClientIdentifier {
@@ -115,4 +117,20 @@ message UpdateServerRequest {
 }
 
 message UpdateServerReply {
+}
+
+message RestartServerRequest {
+    string Password = 1;
+}
+
+message RestartServerReply {
+}
+
+message DumpServerLogRequest {
+    string Password = 1;
+    uint64 BytesLimit = 2;
+}
+
+message DumpServerLogReply {
+    bytes LogData = 1;
 }

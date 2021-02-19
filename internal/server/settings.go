@@ -2,12 +2,11 @@ package server
 
 // Settings ...
 type Settings struct {
-	Port           int
-	Host           string
-	UpdatePassword string
+	Port     int
+	Host     string
+	Password string
 
-	WorkingDir   string
-	LogFileName  string
-	LogVerbosity int
-	LogSeverity  string
+	WorkingDir  string
+	LogFileName string
+	LogSeverity string
 }

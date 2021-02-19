@@ -25,6 +25,8 @@ type CompilationServiceClient interface {
 	ClearEnvironment(ctx context.Context, in *ClearEnvironmentRequest, opts ...grpc.CallOption) (*ClearEnvironmentReply, error)
 	Status(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (*StatusReply, error)
 	UpdateServer(ctx context.Context, in *UpdateServerRequest, opts ...grpc.CallOption) (*UpdateServerReply, error)
+	RestartServer(ctx context.Context, in *RestartServerRequest, opts ...grpc.CallOption) (*RestartServerReply, error)
+	DumpServerLog(ctx context.Context, in *DumpServerLogRequest, opts ...grpc.CallOption) (*DumpServerLogReply, error)
 }
 
 type compilationServiceClient struct {
@@ -144,6 +146,24 @@ func (c *compilationServiceClient) UpdateServer(ctx context.Context, in *UpdateS
 	return out, nil
 }
 
+func (c *compilationServiceClient) RestartServer(ctx context.Context, in *RestartServerRequest, opts ...grpc.CallOption) (*RestartServerReply, error) {
+	out := new(RestartServerReply)
+	err := c.cc.Invoke(ctx, "/popcorn.CompilationService/RestartServer", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *compilationServiceClient) DumpServerLog(ctx context.Context, in *DumpServerLogRequest, opts ...grpc.CallOption) (*DumpServerLogReply, error) {
+	out := new(DumpServerLogReply)
+	err := c.cc.Invoke(ctx, "/popcorn.CompilationService/DumpServerLog", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CompilationServiceServer is the server API for CompilationService service.
 // All implementations must embed UnimplementedCompilationServiceServer
 // for forward compatibility
@@ -155,6 +175,8 @@ type CompilationServiceServer interface {
 	ClearEnvironment(context.Context, *ClearEnvironmentRequest) (*ClearEnvironmentReply, error)
 	Status(context.Context, *StatusRequest) (*StatusReply, error)
 	UpdateServer(context.Context, *UpdateServerRequest) (*UpdateServerReply, error)
+	RestartServer(context.Context, *RestartServerRequest) (*RestartServerReply, error)
+	DumpServerLog(context.Context, *DumpServerLogRequest) (*DumpServerLogReply, error)
 	mustEmbedUnimplementedCompilationServiceServer()
 }
 
@@ -182,6 +204,12 @@ func (UnimplementedCompilationServiceServer) Status(context.Context, *StatusRequ
 }
 func (UnimplementedCompilationServiceServer) UpdateServer(context.Context, *UpdateServerRequest) (*UpdateServerReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateServer not implemented")
+}
+func (UnimplementedCompilationServiceServer) RestartServer(context.Context, *RestartServerRequest) (*RestartServerReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RestartServer not implemented")
+}
+func (UnimplementedCompilationServiceServer) DumpServerLog(context.Context, *DumpServerLogRequest) (*DumpServerLogReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DumpServerLog not implemented")
 }
 func (UnimplementedCompilationServiceServer) mustEmbedUnimplementedCompilationServiceServer() {}
 
@@ -328,6 +356,42 @@ func _CompilationService_UpdateServer_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CompilationService_RestartServer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RestartServerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CompilationServiceServer).RestartServer(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/popcorn.CompilationService/RestartServer",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CompilationServiceServer).RestartServer(ctx, req.(*RestartServerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CompilationService_DumpServerLog_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DumpServerLogRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CompilationServiceServer).DumpServerLog(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/popcorn.CompilationService/DumpServerLog",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CompilationServiceServer).DumpServerLog(ctx, req.(*DumpServerLogRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CompilationService_ServiceDesc is the grpc.ServiceDesc for CompilationService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -354,6 +418,14 @@ var CompilationService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdateServer",
 			Handler:    _CompilationService_UpdateServer_Handler,
+		},
+		{
+			MethodName: "RestartServer",
+			Handler:    _CompilationService_RestartServer_Handler,
+		},
+		{
+			MethodName: "DumpServerLog",
+			Handler:    _CompilationService_DumpServerLog_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
