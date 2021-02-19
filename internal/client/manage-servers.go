@@ -62,6 +62,7 @@ func CheckServers(settings *Settings) {
 			fmt.Println("  CPU count:", res.serverStatus.CPUsCount)
 			fmt.Println("  Goroutines count:", res.serverStatus.ActiveGoroutinesCount)
 			fmt.Println("  Clients count:", res.serverStatus.ClientsCount)
+			fmt.Println("  System headers count:", res.serverStatus.SystemHeadersUsedCount)
 			fmt.Println("  Cached headers count:", res.serverStatus.CachedHeaderOnDiskCount)
 			fmt.Println("  Cached headers bytes:", prettyBytes(res.serverStatus.CachedHeaderOnDiskBytes))
 			fmt.Println("  Heap allocates bytes:", prettyBytes(res.serverStatus.HeapAllocBytes))

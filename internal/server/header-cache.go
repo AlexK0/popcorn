@@ -1,36 +1,50 @@
 package server
 
 import (
+	"os"
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/AlexK0/popcorn/internal/common"
 )
 
-type headerKey struct {
-	path  string
-	mTime int64
+type headerMeta struct {
+	sha256sum string
+	mtime     int64
 }
 
 // ClientHeaderCache ...
 type ClientHeaderCache struct {
-	headersSHA256 map[headerKey]string
-	mu            sync.RWMutex
+	headersMeta map[string]headerMeta
+	mu          sync.RWMutex
 }
 
 // GetHeaderSHA256 ...
 func (headerCache *ClientHeaderCache) GetHeaderSHA256(headerPath string, headerMTime int64) string {
-	key := headerKey{headerPath, headerMTime}
 	headerCache.mu.RLock()
-	sha256sum := headerCache.headersSHA256[key]
+	meta := headerCache.headersMeta[headerPath]
 	headerCache.mu.RUnlock()
-	return sha256sum
+	if meta.mtime != headerMTime {
+		return ""
+	}
+	return meta.sha256sum
 }
 
 // SetHeaderSHA256 ...
 func (headerCache *ClientHeaderCache) SetHeaderSHA256(headerPath string, headerMTime int64, sha256sum string) {
-	key := headerKey{headerPath, headerMTime}
+	meta := headerMeta{sha256sum, headerMTime}
 	headerCache.mu.Lock()
-	headerCache.headersSHA256[key] = sha256sum
+	headerCache.headersMeta[headerPath] = meta
 	headerCache.mu.Unlock()
+}
+
+// GetHeadersCount ...
+func (headerCache *ClientHeaderCache) GetHeadersCount() uint64 {
+	headerCache.mu.RLock()
+	elements := len(headerCache.headersMeta)
+	headerCache.mu.RUnlock()
+	return uint64(elements)
 }
 
 type clientKey struct {
@@ -64,7 +78,7 @@ func (clientMap *ClientCacheMap) GetHeaderCache(machineID string, mac string, us
 	}
 
 	newHeaderCache := &ClientHeaderCache{
-		headersSHA256: make(map[headerKey]string, 1024),
+		headersMeta: make(map[string]headerMeta, 1024),
 	}
 
 	clientMap.mu.Lock()
@@ -134,4 +148,44 @@ func (processingHeaders *ProcessingHeadersMap) FinishHeaderProcessing(headerPath
 	processingHeaders.mu.Lock()
 	delete(processingHeaders.headers, key)
 	processingHeaders.mu.Unlock()
+}
+
+// SystemHeaderCache ...
+type SystemHeaderCache struct {
+	cache ClientHeaderCache
+}
+
+// MakeSystemHeaderCache ...
+func MakeSystemHeaderCache() *SystemHeaderCache {
+	return &SystemHeaderCache{
+		cache: ClientHeaderCache{headersMeta: make(map[string]headerMeta, 512)},
+	}
+}
+
+// GetSystemHeaderSHA256 ...
+func (systemHeaderCache *SystemHeaderCache) GetSystemHeaderSHA256(headerPath string) string {
+	if !strings.HasPrefix(headerPath, "/usr/") {
+		return ""
+	}
+
+	info, err := os.Stat(headerPath)
+	if err != nil {
+		return ""
+	}
+
+	mtime := info.ModTime().UnixNano()
+	if sha256sum := systemHeaderCache.cache.GetHeaderSHA256(headerPath, mtime); len(sha256sum) != 0 {
+		return sha256sum
+	}
+
+	sha256sum, _ := common.GetFileSHA256(headerPath)
+	if len(sha256sum) != 0 {
+		systemHeaderCache.cache.SetHeaderSHA256(headerPath, mtime, sha256sum)
+	}
+	return sha256sum
+}
+
+// GetSystemHeadersCacheSize ...
+func (systemHeaderCache *SystemHeaderCache) GetSystemHeadersCacheSize() uint64 {
+	return systemHeaderCache.cache.GetHeadersCount()
 }

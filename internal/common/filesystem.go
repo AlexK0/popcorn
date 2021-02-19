@@ -1,7 +1,10 @@
 package common
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -78,4 +81,19 @@ func DirElementsAndSize(path string) (elements uint64, size uint64, err error) {
 		return err
 	})
 	return
+}
+
+// GetFileSHA256 ...
+func GetFileSHA256(filePath string) (string, error) {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	hasher := sha256.New()
+	if _, err := io.Copy(hasher, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(hasher.Sum(nil)), nil
 }

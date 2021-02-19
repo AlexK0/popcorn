@@ -91,13 +91,14 @@ message StatusReply {
     uint64 ActiveGoroutinesCount = 3;
     uint64 ClientsCount = 4;
 
-    uint64 CachedHeaderOnDiskCount = 5;
-    uint64 CachedHeaderOnDiskBytes = 6;
+    uint64 SystemHeadersUsedCount = 5;
+    uint64 CachedHeaderOnDiskCount = 6;
+    uint64 CachedHeaderOnDiskBytes = 7;
 
-    uint64 HeapAllocBytes = 7;
-    uint64 SystemAllocBytes = 8;
+    uint64 HeapAllocBytes = 8;
+    uint64 SystemAllocBytes = 9;
 
-    uint64 UptimeNanoseconds = 9;
+    uint64 UptimeNanoseconds = 10;
 }
 
 message UpdateServerRequest {

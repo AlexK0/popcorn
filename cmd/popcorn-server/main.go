@@ -80,6 +80,7 @@ func main() {
 
 		ClientCache:      server.MakeClientCacheMap(),
 		UploadingHeaders: server.MakeProcessingHeaders(),
+		SystemHeaders:    server.MakeSystemHeaderCache(),
 	}
 	pb.RegisterCompilationServiceServer(grpcServer, compilationServer)
 	if err := grpcServer.Serve(lis); err != nil {

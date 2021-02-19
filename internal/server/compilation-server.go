@@ -36,6 +36,7 @@ type CompilationServer struct {
 
 	ClientCache      *ClientCacheMap
 	UploadingHeaders *ProcessingHeadersMap
+	SystemHeaders    *SystemHeaderCache
 }
 
 func (s *CompilationServer) makeSysRoot(clientID *pb.ClientIdentifier) string {
@@ -118,6 +119,10 @@ func (s *CompilationServer) CopyHeadersFromClientCache(in *pb.CopyHeadersFromCli
 			}
 			continue
 		}
+
+		if systemSHA256 := s.SystemHeaders.GetSystemHeaderSHA256(header.FilePath); systemSHA256 == headerSHA256 {
+			continue
+		}
 		linkCreated, err := s.tryLinkHeaderFromCache(sysRoot, header.FilePath, headerSHA256)
 		if err != nil {
 			return err
@@ -157,21 +162,25 @@ func (s *CompilationServer) CopyHeadersFromGlobalCache(in *pb.CopyHeadersFromGlo
 	headerCache := s.ClientCache.GetHeaderCache(in.ClientID.MachineID, in.ClientID.MacAddress, in.ClientID.UserName)
 	deferredHeadersForCopy := make([]deferredHeader, 0, 16)
 	for index, header := range in.GlobalHeaders {
+		if systemSHA256 := s.SystemHeaders.GetSystemHeaderSHA256(header.ClientMeta.FilePath); systemSHA256 == header.SHA256Sum {
+			headerCache.SetHeaderSHA256(header.ClientMeta.FilePath, header.ClientMeta.MTime, header.SHA256Sum)
+			continue
+		}
 		linkCreated, err := s.tryLinkHeaderFromCache(sysRoot, header.ClientMeta.FilePath, header.SHA256Sum)
 		if err != nil {
 			return err
 		}
 		if linkCreated {
 			headerCache.SetHeaderSHA256(header.ClientMeta.FilePath, header.ClientMeta.MTime, header.SHA256Sum)
-		} else {
-			if s.UploadingHeaders.StartHeaderProcessing(header.ClientMeta.FilePath, header.SHA256Sum) {
-				if err := out.Send(&pb.CopyHeadersFromGlobalCacheReply{MissedHeaderIndex: int32(index)}); err != nil {
-					s.UploadingHeaders.FinishHeaderProcessing(header.ClientMeta.FilePath, header.SHA256Sum)
-					return err
-				}
-			} else {
-				deferredHeadersForCopy = append(deferredHeadersForCopy, deferredHeader{header.ClientMeta.FilePath, header.SHA256Sum, index})
+			continue
+		}
+		if s.UploadingHeaders.StartHeaderProcessing(header.ClientMeta.FilePath, header.SHA256Sum) {
+			if err := out.Send(&pb.CopyHeadersFromGlobalCacheReply{MissedHeaderIndex: int32(index)}); err != nil {
+				s.UploadingHeaders.FinishHeaderProcessing(header.ClientMeta.FilePath, header.SHA256Sum)
+				return err
 			}
+		} else {
+			deferredHeadersForCopy = append(deferredHeadersForCopy, deferredHeader{header.ClientMeta.FilePath, header.SHA256Sum, index})
 		}
 	}
 
@@ -277,6 +286,7 @@ func (s *CompilationServer) Status(ctx context.Context, in *pb.StatusRequest) (*
 		CPUsCount:               uint64(runtime.NumCPU()),
 		ActiveGoroutinesCount:   uint64(runtime.NumGoroutine()),
 		ClientsCount:            s.ClientCache.GetCachesCount(),
+		SystemHeadersUsedCount:  s.SystemHeaders.GetSystemHeadersCacheSize(),
 		CachedHeaderOnDiskCount: headersCount,
 		CachedHeaderOnDiskBytes: headersSize,
 		HeapAllocBytes:          m.HeapAlloc,
