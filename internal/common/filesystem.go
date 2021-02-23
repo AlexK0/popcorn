@@ -1,15 +1,9 @@
 package common
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"errors"
-	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"sort"
-	"strings"
 )
 
 // WriteFile ...
@@ -29,22 +23,6 @@ func WriteFile(fullPath string, fileContent []byte) error {
 		return err
 	}
 	return os.Rename(tmpFile.Name(), fullPath)
-}
-
-// ErrNoMacAddress ...
-var ErrNoMacAddress = errors.New("can't find mac address")
-
-// SearchMacAddress ...
-func SearchMacAddress() ([]byte, error) {
-	filesWithMac, _ := filepath.Glob("/sys/class/net/*/address")
-	sort.Strings(filesWithMac)
-	for _, macFile := range filesWithMac {
-		if strings.HasPrefix(macFile, "/sys/class/net/eth") || strings.HasPrefix(macFile, "/sys/class/net/wlp") {
-			return ioutil.ReadFile(macFile)
-		}
-	}
-
-	return nil, ErrNoMacAddress
 }
 
 // NormalizePaths ...
@@ -81,19 +59,4 @@ func DirElementsAndSize(path string) (elements uint64, size uint64, err error) {
 		return err
 	})
 	return
-}
-
-// GetFileSHA256 ...
-func GetFileSHA256(filePath string) (string, error) {
-	f, err := os.Open(filePath)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-
-	hasher := sha256.New()
-	if _, err := io.Copy(hasher, f); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(hasher.Sum(nil)), nil
 }

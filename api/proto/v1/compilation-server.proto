@@ -6,6 +6,8 @@ option go_package = "github.com/AlexK0/popcorn/internal/api/popcorn";
 package popcorn;
 
 service CompilationService {
+   //rpc StartCompilationSession(StartCompilationSessionRequest) returns (StartCompilationSessionReply) {}
+
     rpc CopyHeadersFromClientCache (CopyHeadersFromClientCacheRequest) returns (stream CopyHeadersFromClientCacheReply) {}
     rpc CopyHeadersFromGlobalCache (CopyHeadersFromGlobalCacheRequest) returns (stream CopyHeadersFromGlobalCacheReply) {}
     rpc CopyHeader (CopyHeaderRequest) returns (CopyHeaderReply) {}
@@ -20,11 +22,11 @@ service CompilationService {
     rpc DumpServerLog(DumpServerLogRequest) returns (DumpServerLogReply) {}
 }
 
-message ClientIdentifier {
-    string MachineID = 1;
-    string MacAddress = 2;
-    string UserName = 3;
-    int32 Pid = 4;
+message SHA256Message {
+    fixed64 B0_B7 = 1;
+    fixed64 B8_B15 = 2;
+    fixed64 B16_B23 = 3;
+    fixed64 B24_B31 = 4;
 }
 
 message HeaderClientMeta {
@@ -32,8 +34,12 @@ message HeaderClientMeta {
     int64 MTime = 2;
 }
 
+message StartCompilationSessionRequest {
+
+}
+
 message CopyHeadersFromClientCacheRequest {
-    ClientIdentifier ClientID = 1;
+    SHA256Message ClientID = 1;
     repeated HeaderClientMeta ClientHeaders = 2;
     bool ClearEnvironmentBeforeCopy = 3;
 }
@@ -45,11 +51,11 @@ message CopyHeadersFromClientCacheReply {
 
 message HeaderGlobalMeta {
     HeaderClientMeta ClientMeta = 1;
-    string SHA256sum = 2;
+    SHA256Message SHA256sum = 2;
 }
 
 message CopyHeadersFromGlobalCacheRequest {
-    ClientIdentifier ClientID = 1;
+    SHA256Message ClientID = 1;
     repeated HeaderGlobalMeta GlobalHeaders = 2;
 }
 
@@ -63,14 +69,14 @@ message HeaderFullData {
 }
 
 message CopyHeaderRequest {
-    ClientIdentifier ClientID = 1;
+    SHA256Message ClientID = 1;
     HeaderFullData Header = 2;
 }
 
 message CopyHeaderReply {}
 
 message CompileSourceRequest {
-    ClientIdentifier ClientID = 1;
+    SHA256Message ClientID = 1;
     string FilePath = 2;
     string Compiler = 3;
     repeated string CompilerArgs = 4;
@@ -86,7 +92,7 @@ message CompileSourceReply {
 }
 
 message ClearEnvironmentRequest {
-    ClientIdentifier ClientID = 1;
+    SHA256Message ClientID = 1;
 }
 
 message ClearEnvironmentReply {

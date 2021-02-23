@@ -3,9 +3,6 @@ package client
 import (
 	"io"
 	"io/ioutil"
-	"os"
-	"os/user"
-	"strings"
 
 	pb "github.com/AlexK0/popcorn/internal/api/proto/v1"
 	"github.com/AlexK0/popcorn/internal/common"
@@ -19,38 +16,14 @@ type RemoteCompiler struct {
 	remoteCmdArgs []string
 
 	grpcClient *GRPCClient
-	clientID   *pb.ClientIdentifier
+	clientID   *pb.SHA256Message
 
 	envCleanupRequired bool
 }
 
-func makeClientID() (*pb.ClientIdentifier, error) {
-	machineID, err := ioutil.ReadFile("/etc/machine-id")
-	if err != nil {
-		return nil, err
-	}
-
-	mac, err := common.SearchMacAddress()
-	if err != nil {
-		return nil, err
-	}
-
-	user, err := user.Current()
-	if err != nil {
-		return nil, err
-	}
-
-	return &pb.ClientIdentifier{
-		MachineID:  strings.TrimSpace(string(machineID)),
-		MacAddress: strings.ReplaceAll(strings.TrimSpace(string(mac)), ":", "-"),
-		UserName:   strings.Join([]string{user.Username, user.Uid}, "-"),
-		Pid:        int32(os.Getpid()),
-	}, nil
-}
-
 // MakeRemoteCompiler ...
 func MakeRemoteCompiler(localCompiler *LocalCompiler, serverHostPort string) (*RemoteCompiler, error) {
-	clientID, err := makeClientID()
+	clientID, err := common.MakeUniqueClientID()
 	if err != nil {
 		return nil, err
 	}
@@ -67,7 +40,7 @@ func MakeRemoteCompiler(localCompiler *LocalCompiler, serverHostPort string) (*R
 		remoteCmdArgs: localCompiler.MakeRemoteCmd(),
 
 		grpcClient: grpcClient,
-		clientID:   clientID,
+		clientID:   common.SHA256StructToSHA256Message(clientID),
 	}, nil
 }
 

@@ -10,7 +10,7 @@ import (
 )
 
 type headerMeta struct {
-	sha256sum string
+	sha256sum common.SHA256Struct
 	mtime     int64
 }
 
@@ -21,21 +21,20 @@ type ClientHeaderCache struct {
 }
 
 // GetHeaderSHA256 ...
-func (headerCache *ClientHeaderCache) GetHeaderSHA256(headerPath string, headerMTime int64) string {
+func (headerCache *ClientHeaderCache) GetHeaderSHA256(headerPath string, headerMTime int64) (common.SHA256Struct, bool) {
 	headerCache.mu.RLock()
-	meta := headerCache.headersMeta[headerPath]
+	meta, ok := headerCache.headersMeta[headerPath]
 	headerCache.mu.RUnlock()
 	if meta.mtime != headerMTime {
-		return ""
+		return common.SHA256Struct{}, false
 	}
-	return meta.sha256sum
+	return meta.sha256sum, ok
 }
 
 // SetHeaderSHA256 ...
-func (headerCache *ClientHeaderCache) SetHeaderSHA256(headerPath string, headerMTime int64, sha256sum string) {
-	meta := headerMeta{sha256sum, headerMTime}
+func (headerCache *ClientHeaderCache) SetHeaderSHA256(headerPath string, headerMTime int64, sha256sum common.SHA256Struct) {
 	headerCache.mu.Lock()
-	headerCache.headersMeta[headerPath] = meta
+	headerCache.headersMeta[headerPath] = headerMeta{sha256sum, headerMTime}
 	headerCache.mu.Unlock()
 }
 
@@ -47,30 +46,23 @@ func (headerCache *ClientHeaderCache) GetHeadersCount() uint64 {
 	return uint64(elements)
 }
 
-type clientKey struct {
-	machineID string
-	mac       string
-	userName  string
-}
-
 // ClientCacheMap ...
 type ClientCacheMap struct {
-	clients map[clientKey]*ClientHeaderCache
+	clients map[common.SHA256Struct]*ClientHeaderCache
 	mu      sync.RWMutex
 }
 
 // MakeClientCacheMap ...
 func MakeClientCacheMap() *ClientCacheMap {
 	return &ClientCacheMap{
-		clients: make(map[clientKey]*ClientHeaderCache, 1024),
+		clients: make(map[common.SHA256Struct]*ClientHeaderCache, 1024),
 	}
 }
 
 // GetHeaderCache ...
-func (clientMap *ClientCacheMap) GetHeaderCache(machineID string, mac string, userName string) *ClientHeaderCache {
-	key := clientKey{machineID, mac, userName}
+func (clientMap *ClientCacheMap) GetHeaderCache(clientID common.SHA256Struct) *ClientHeaderCache {
 	clientMap.mu.RLock()
-	headerCache := clientMap.clients[key]
+	headerCache := clientMap.clients[clientID]
 	clientMap.mu.RUnlock()
 
 	if headerCache != nil {
@@ -82,9 +74,9 @@ func (clientMap *ClientCacheMap) GetHeaderCache(machineID string, mac string, us
 	}
 
 	clientMap.mu.Lock()
-	headerCache = clientMap.clients[key]
+	headerCache = clientMap.clients[clientID]
 	if headerCache == nil {
-		clientMap.clients[key] = newHeaderCache
+		clientMap.clients[clientID] = newHeaderCache
 		headerCache = newHeaderCache
 	}
 	clientMap.mu.Unlock()
@@ -101,7 +93,7 @@ func (clientMap *ClientCacheMap) GetCachesCount() uint64 {
 
 type processingHeaderKey struct {
 	path      string
-	sha256sum string
+	sha256sum common.SHA256Struct
 }
 
 // ProcessingHeadersMap ...
@@ -118,7 +110,7 @@ func MakeProcessingHeaders() *ProcessingHeadersMap {
 }
 
 // StartHeaderProcessing ...
-func (processingHeaders *ProcessingHeadersMap) StartHeaderProcessing(headerPath string, sha256sum string) bool {
+func (processingHeaders *ProcessingHeadersMap) StartHeaderProcessing(headerPath string, sha256sum common.SHA256Struct) bool {
 	key := processingHeaderKey{headerPath, sha256sum}
 	now := time.Now()
 	started := false
@@ -134,7 +126,7 @@ func (processingHeaders *ProcessingHeadersMap) StartHeaderProcessing(headerPath 
 }
 
 // ForceStartHeaderProcessing ...
-func (processingHeaders *ProcessingHeadersMap) ForceStartHeaderProcessing(headerPath string, sha256sum string) {
+func (processingHeaders *ProcessingHeadersMap) ForceStartHeaderProcessing(headerPath string, sha256sum common.SHA256Struct) {
 	key := processingHeaderKey{headerPath, sha256sum}
 	now := time.Now()
 	processingHeaders.mu.Lock()
@@ -143,7 +135,7 @@ func (processingHeaders *ProcessingHeadersMap) ForceStartHeaderProcessing(header
 }
 
 // FinishHeaderProcessing ...
-func (processingHeaders *ProcessingHeadersMap) FinishHeaderProcessing(headerPath string, sha256sum string) {
+func (processingHeaders *ProcessingHeadersMap) FinishHeaderProcessing(headerPath string, sha256sum common.SHA256Struct) {
 	key := processingHeaderKey{headerPath, sha256sum}
 	processingHeaders.mu.Lock()
 	delete(processingHeaders.headers, key)
@@ -163,23 +155,23 @@ func MakeSystemHeaderCache() *SystemHeaderCache {
 }
 
 // GetSystemHeaderSHA256 ...
-func (systemHeaderCache *SystemHeaderCache) GetSystemHeaderSHA256(headerPath string) string {
+func (systemHeaderCache *SystemHeaderCache) GetSystemHeaderSHA256(headerPath string) common.SHA256Struct {
 	if !strings.HasPrefix(headerPath, "/usr/") {
-		return ""
+		return common.SHA256Struct{}
 	}
 
 	info, err := os.Stat(headerPath)
 	if err != nil {
-		return ""
+		return common.SHA256Struct{}
 	}
 
 	mtime := info.ModTime().UnixNano()
-	if sha256sum := systemHeaderCache.cache.GetHeaderSHA256(headerPath, mtime); len(sha256sum) != 0 {
+	if sha256sum, ok := systemHeaderCache.cache.GetHeaderSHA256(headerPath, mtime); ok {
 		return sha256sum
 	}
 
-	sha256sum, _ := common.GetFileSHA256(headerPath)
-	if len(sha256sum) != 0 {
+	sha256sum, err := common.GetFileSHA256(headerPath)
+	if err == nil {
 		systemHeaderCache.cache.SetHeaderSHA256(headerPath, mtime, sha256sum)
 	}
 	return sha256sum
