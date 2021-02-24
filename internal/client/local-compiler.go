@@ -3,7 +3,6 @@ package client
 import (
 	"bufio"
 	"bytes"
-	"math/rand"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -129,10 +128,7 @@ func extractHeaders(rawOut []byte) []string {
 		}
 		headers = append(headers, line)
 	}
-
-	headers = common.NormalizePaths(headers)
-	rand.Shuffle(len(headers), func(i, j int) { headers[i], headers[j] = headers[j], headers[i] })
-	return headers
+	return common.NormalizePaths(headers)
 }
 
 func (compiler *LocalCompiler) addIncludeDirsFrom(rawOut string) {

@@ -77,7 +77,7 @@ func main() {
 		GRPCServer:            grpcServer,
 		RemoteControlPassword: settings.Password,
 
-		ClientCache:      server.MakeClientCacheMap(),
+		ClientCache:      server.MakeUserCache(),
 		UploadingHeaders: server.MakeProcessingHeaders(),
 		SystemHeaders:    server.MakeSystemHeaderCache(),
 		Sessions:         server.MakeUserSessions(),

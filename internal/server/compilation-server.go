@@ -35,8 +35,8 @@ type CompilationServer struct {
 
 	remoteControlLock sync.Mutex
 
-	ClientCache      *ClientCacheMap
-	UploadingHeaders *ProcessingHeadersMap
+	ClientCache      *UserCache
+	UploadingHeaders *SendingHeaders
 	SystemHeaders    *SystemHeaderCache
 
 	Sessions *UserSessions
@@ -48,11 +48,11 @@ func (s *CompilationServer) makeCachedHeaderPath(headerPath string, headerSHA256
 
 func (s *CompilationServer) tryLinkHeaderFromCache(workingDir string, headerPath string, headerSHA256 common.SHA256Struct) bool {
 	cachedHeaderPath := s.makeCachedHeaderPath(headerPath, headerSHA256)
-	headerPathInEnv := path.Join(workingDir, headerPath)
-	if err := os.MkdirAll(path.Dir(headerPathInEnv), os.ModePerm); err != nil {
+	headerPathInWorkingDir := path.Join(workingDir, headerPath)
+	if err := os.MkdirAll(path.Dir(headerPathInWorkingDir), os.ModePerm); err != nil {
 		return false
 	}
-	return os.Link(cachedHeaderPath, headerPathInEnv) == nil
+	return os.Link(cachedHeaderPath, headerPathInWorkingDir) == nil
 }
 
 // StartCompilationSession ...
@@ -93,7 +93,7 @@ func (s *CompilationServer) StartCompilationSession(ctx context.Context, in *pb.
 		if s.tryLinkHeaderFromCache(session.WorkingDir, headerMetadata.FilePath, headerSHA256) {
 			continue
 		}
-		if s.UploadingHeaders.StartHeaderProcessing(headerMetadata.FilePath, headerSHA256) {
+		if s.UploadingHeaders.StartHeaderSending(headerMetadata.FilePath, headerSHA256) {
 			missedHeadersFullCopy = append(missedHeadersFullCopy, int32(index))
 		} else {
 			missedHeadersSHA256 = append(missedHeadersSHA256, int32(index))
@@ -127,14 +127,14 @@ func (s *CompilationServer) SendHeaderSHA256(ctx context.Context, in *pb.SendHea
 		if s.tryLinkHeaderFromCache(session.WorkingDir, headerMetadata.FilePath, headerMetadata.SHA256Struct) {
 			return &pb.SendHeaderSHA256Reply{}, nil
 		}
-		if s.UploadingHeaders.StartHeaderProcessing(headerMetadata.FilePath, headerMetadata.SHA256Struct) {
+		if s.UploadingHeaders.StartHeaderSending(headerMetadata.FilePath, headerMetadata.SHA256Struct) {
 			return &pb.SendHeaderSHA256Reply{FullCopyRequired: true}, nil
 		}
 		// TODO Why 100 milliseconds?
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	s.UploadingHeaders.ForceStartHeaderProcessing(headerMetadata.FilePath, headerMetadata.SHA256Struct)
+	s.UploadingHeaders.ForceStartHeaderSending(headerMetadata.FilePath, headerMetadata.SHA256Struct)
 	return &pb.SendHeaderSHA256Reply{FullCopyRequired: true}, nil
 }
 
@@ -146,7 +146,7 @@ func (s *CompilationServer) SendHeader(ctx context.Context, in *pb.SendHeaderReq
 	}
 
 	headerMetadata := &session.RequiredHeaders[in.HeaderIndex]
-	defer s.UploadingHeaders.FinishHeaderProcessing(headerMetadata.FilePath, headerMetadata.SHA256Struct)
+	defer s.UploadingHeaders.FinishHeaderSending(headerMetadata.FilePath, headerMetadata.SHA256Struct)
 	if s.tryLinkHeaderFromCache(session.WorkingDir, headerMetadata.FilePath, headerMetadata.SHA256Struct) {
 		return &pb.SendHeaderReply{}, nil
 	}

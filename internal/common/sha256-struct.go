@@ -44,20 +44,20 @@ func MakeSHA256StructFromSlice(b []byte) SHA256Struct {
 // SHA256StructToSHA256Message ...
 func SHA256StructToSHA256Message(sha256struct SHA256Struct) *pb.SHA256Message {
 	return &pb.SHA256Message{
-		B0_B7:   sha256struct.B0_7,
-		B8_B15:  sha256struct.B8_15,
-		B16_B23: sha256struct.B16_23,
-		B24_B31: sha256struct.B24_31,
+		B0_7:   sha256struct.B0_7,
+		B8_15:  sha256struct.B8_15,
+		B16_23: sha256struct.B16_23,
+		B24_31: sha256struct.B24_31,
 	}
 }
 
 // SHA256MessageToSHA256Struct ...
 func SHA256MessageToSHA256Struct(sha256message *pb.SHA256Message) SHA256Struct {
 	return SHA256Struct{
-		B0_7:   sha256message.B0_B7,
-		B8_15:  sha256message.B8_B15,
-		B16_23: sha256message.B16_B23,
-		B24_31: sha256message.B24_B31,
+		B0_7:   sha256message.B0_7,
+		B8_15:  sha256message.B8_15,
+		B16_23: sha256message.B16_23,
+		B24_31: sha256message.B24_31,
 	}
 }
 

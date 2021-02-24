@@ -21,10 +21,10 @@ service CompilationService {
 }
 
 message SHA256Message {
-    fixed64 B0_B7 = 1;
-    fixed64 B8_B15 = 2;
-    fixed64 B16_B23 = 3;
-    fixed64 B24_B31 = 4;
+    fixed64 B0_7 = 1;
+    fixed64 B8_15 = 2;
+    fixed64 B16_23 = 3;
+    fixed64 B24_31 = 4;
 }
 
 message HeaderMetadata {
