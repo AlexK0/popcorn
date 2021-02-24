@@ -26,8 +26,7 @@ type CompilationServer struct {
 
 	StartTime time.Time
 
-	WorkingDir     string
-	HeaderCacheDir string
+	WorkingDir string
 
 	GRPCServer                 *grpc.Server
 	RemoteControlPassword      string
@@ -35,24 +34,12 @@ type CompilationServer struct {
 
 	remoteControlLock sync.Mutex
 
-	ClientCache      *UserCache
+	UserCache        *UserCache
 	UploadingHeaders *SendingHeaders
 	SystemHeaders    *SystemHeaderCache
+	HeaderFileCache  *FileCache
 
 	Sessions *UserSessions
-}
-
-func (s *CompilationServer) makeCachedHeaderPath(headerPath string, headerSHA256 common.SHA256Struct) string {
-	return fmt.Sprintf("%s.%d.%d.%d.%d", path.Join(s.HeaderCacheDir, headerPath), headerSHA256.B0_7, headerSHA256.B8_15, headerSHA256.B16_23, headerSHA256.B24_31)
-}
-
-func (s *CompilationServer) tryLinkHeaderFromCache(workingDir string, headerPath string, headerSHA256 common.SHA256Struct) bool {
-	cachedHeaderPath := s.makeCachedHeaderPath(headerPath, headerSHA256)
-	headerPathInWorkingDir := path.Join(workingDir, headerPath)
-	if err := os.MkdirAll(path.Dir(headerPathInWorkingDir), os.ModePerm); err != nil {
-		return false
-	}
-	return os.Link(cachedHeaderPath, headerPathInWorkingDir) == nil
 }
 
 // StartCompilationSession ...
@@ -64,7 +51,7 @@ func (s *CompilationServer) StartCompilationSession(ctx context.Context, in *pb.
 		CompilerArgs:    in.CompilerArgs,
 		RequiredHeaders: make([]RequiredHeaderMetadata, 0, len(in.RequiredHeaders)),
 		SourceFilePath:  in.SourceFilePath,
-		HeaderCache:     s.ClientCache.GetHeaderCache(userID),
+		FileSHA256Cache: s.UserCache.GetFilesCache(userID),
 	}
 
 	sessionID := s.Sessions.OpenNewSession(session)
@@ -78,7 +65,7 @@ func (s *CompilationServer) StartCompilationSession(ctx context.Context, in *pb.
 	missedHeadersSHA256 := make([]int32, 0, len(in.RequiredHeaders))
 	missedHeadersFullCopy := make([]int32, 0, len(in.RequiredHeaders))
 	for index, headerMetadata := range in.RequiredHeaders {
-		headerSHA256, ok := session.HeaderCache.GetHeaderSHA256(headerMetadata.FilePath, headerMetadata.MTime)
+		headerSHA256, ok := session.FileSHA256Cache.GetFileSHA256(headerMetadata.FilePath, headerMetadata.MTime)
 		session.RequiredHeaders = append(session.RequiredHeaders, RequiredHeaderMetadata{
 			HeaderMetadata: headerMetadata,
 			SHA256Struct:   headerSHA256,
@@ -90,7 +77,8 @@ func (s *CompilationServer) StartCompilationSession(ctx context.Context, in *pb.
 		if systemSHA256 := s.SystemHeaders.GetSystemHeaderSHA256(headerMetadata.FilePath); systemSHA256 == headerSHA256 {
 			continue
 		}
-		if s.tryLinkHeaderFromCache(session.WorkingDir, headerMetadata.FilePath, headerSHA256) {
+		headerPathInWorkingDir := path.Join(session.WorkingDir, headerMetadata.FilePath)
+		if s.HeaderFileCache.CreateLinkFromCache(headerMetadata.FilePath, headerSHA256, headerPathInWorkingDir) {
 			continue
 		}
 		if s.UploadingHeaders.StartHeaderSending(headerMetadata.FilePath, headerSHA256) {
@@ -116,15 +104,16 @@ func (s *CompilationServer) SendHeaderSHA256(ctx context.Context, in *pb.SendHea
 
 	headerMetadata := &session.RequiredHeaders[in.HeaderIndex]
 	headerMetadata.SHA256Struct = common.SHA256MessageToSHA256Struct(in.HeaderSHA256)
-	session.HeaderCache.SetHeaderSHA256(headerMetadata.FilePath, headerMetadata.MTime, headerMetadata.SHA256Struct)
+	session.FileSHA256Cache.SetFileSHA256(headerMetadata.FilePath, headerMetadata.MTime, headerMetadata.SHA256Struct)
 	if systemSHA256 := s.SystemHeaders.GetSystemHeaderSHA256(headerMetadata.FilePath); systemSHA256 == headerMetadata.SHA256Struct {
 		return &pb.SendHeaderSHA256Reply{}, nil
 	}
 
+	headerPathInWorkingDir := path.Join(session.WorkingDir, headerMetadata.FilePath)
 	start := time.Now()
 	// TODO Why 6 seconds?
 	for time.Since(start) < 6*time.Second {
-		if s.tryLinkHeaderFromCache(session.WorkingDir, headerMetadata.FilePath, headerMetadata.SHA256Struct) {
+		if s.HeaderFileCache.CreateLinkFromCache(headerMetadata.FilePath, headerMetadata.SHA256Struct, headerPathInWorkingDir) {
 			return &pb.SendHeaderSHA256Reply{}, nil
 		}
 		if s.UploadingHeaders.StartHeaderSending(headerMetadata.FilePath, headerMetadata.SHA256Struct) {
@@ -147,19 +136,16 @@ func (s *CompilationServer) SendHeader(ctx context.Context, in *pb.SendHeaderReq
 
 	headerMetadata := &session.RequiredHeaders[in.HeaderIndex]
 	defer s.UploadingHeaders.FinishHeaderSending(headerMetadata.FilePath, headerMetadata.SHA256Struct)
-	if s.tryLinkHeaderFromCache(session.WorkingDir, headerMetadata.FilePath, headerMetadata.SHA256Struct) {
+	headerPathInWorkingDir := path.Join(session.WorkingDir, headerMetadata.FilePath)
+	if s.HeaderFileCache.CreateLinkFromCache(headerMetadata.FilePath, headerMetadata.SHA256Struct, headerPathInWorkingDir) {
 		return &pb.SendHeaderReply{}, nil
 	}
 
-	headerWorkingDirPath := path.Join(session.WorkingDir, headerMetadata.FilePath)
-	if err := common.WriteFile(headerWorkingDirPath, in.HeaderBody); err != nil {
+	if err := common.WriteFile(headerPathInWorkingDir, in.HeaderBody); err != nil {
 		return nil, fmt.Errorf("Can't save header: %v", err)
 	}
 
-	headerCachePath := s.makeCachedHeaderPath(headerMetadata.FilePath, headerMetadata.SHA256Struct)
-	_ = os.MkdirAll(path.Dir(headerCachePath), os.ModePerm)
-	_ = os.Link(headerWorkingDirPath, headerCachePath)
-
+	_ = s.HeaderFileCache.SaveFileToCache(headerPathInWorkingDir, headerMetadata.FilePath, headerMetadata.SHA256Struct)
 	return &pb.SendHeaderReply{}, nil
 }
 
@@ -243,15 +229,14 @@ func (s *CompilationServer) CloseSession(ctx context.Context, in *pb.CloseSessio
 func (s *CompilationServer) Status(ctx context.Context, in *pb.StatusRequest) (*pb.StatusReply, error) {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
-	headersCount, headersSize, _ := common.DirElementsAndSize(s.HeaderCacheDir)
 	return &pb.StatusReply{
 		ServerVersion:           common.GetVersion(),
 		CPUsCount:               uint64(runtime.NumCPU()),
 		ActiveGoroutinesCount:   uint64(runtime.NumGoroutine()),
-		ClientsCount:            s.ClientCache.GetCachesCount(),
+		ClientsCount:            s.UserCache.GetCachesCount(),
 		SystemHeadersUsedCount:  s.SystemHeaders.GetSystemHeadersCacheSize(),
-		CachedHeaderOnDiskCount: headersCount,
-		CachedHeaderOnDiskBytes: headersSize,
+		CachedHeaderOnDiskCount: 0,
+		CachedHeaderOnDiskBytes: 0,
 		HeapAllocBytes:          m.HeapAlloc,
 		SystemAllocBytes:        m.Sys,
 		UptimeNanoseconds:       uint64(time.Since(s.StartTime).Nanoseconds()),
@@ -322,11 +307,11 @@ func (s *CompilationServer) DumpServerLog(ctx context.Context, in *pb.DumpServer
 	}
 
 	if in.BytesLimit == 0 {
-		if logData, err := ioutil.ReadFile(logFilename); err != nil {
+		logData, err := ioutil.ReadFile(logFilename)
+		if err != nil {
 			return nil, fmt.Errorf("Can't read popcorn-server log file: %v", err)
-		} else {
-			return &pb.DumpServerLogReply{LogData: logData}, nil
 		}
+		return &pb.DumpServerLogReply{LogData: logData}, nil
 	}
 
 	f, err := os.Open(logFilename)

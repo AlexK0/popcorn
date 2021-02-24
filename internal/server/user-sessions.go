@@ -25,7 +25,7 @@ type UserSession struct {
 
 	RequiredHeaders []RequiredHeaderMetadata
 
-	HeaderCache *HeaderCache
+	FileSHA256Cache *FileSHA256Cache
 }
 
 // UserSessions ...

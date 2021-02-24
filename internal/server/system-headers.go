@@ -9,13 +9,13 @@ import (
 
 // SystemHeaderCache ...
 type SystemHeaderCache struct {
-	systemHeaders HeaderCache
+	systemHeaders FileSHA256Cache
 }
 
 // MakeSystemHeaderCache ...
 func MakeSystemHeaderCache() *SystemHeaderCache {
 	return &SystemHeaderCache{
-		systemHeaders: HeaderCache{headersMeta: make(map[string]headerMeta, 512)},
+		systemHeaders: FileSHA256Cache{table: make(map[string]fileMeta, 512)},
 	}
 }
 
@@ -31,18 +31,18 @@ func (systemHeaderCache *SystemHeaderCache) GetSystemHeaderSHA256(headerPath str
 	}
 
 	mtime := info.ModTime().UnixNano()
-	if sha256sum, ok := systemHeaderCache.systemHeaders.GetHeaderSHA256(headerPath, mtime); ok {
+	if sha256sum, ok := systemHeaderCache.systemHeaders.GetFileSHA256(headerPath, mtime); ok {
 		return sha256sum
 	}
 
 	sha256sum, err := common.GetFileSHA256(headerPath)
 	if err == nil {
-		systemHeaderCache.systemHeaders.SetHeaderSHA256(headerPath, mtime, sha256sum)
+		systemHeaderCache.systemHeaders.SetFileSHA256(headerPath, mtime, sha256sum)
 	}
 	return sha256sum
 }
 
 // GetSystemHeadersCacheSize ...
 func (systemHeaderCache *SystemHeaderCache) GetSystemHeadersCacheSize() uint64 {
-	return systemHeaderCache.systemHeaders.GetHeadersCount()
+	return systemHeaderCache.systemHeaders.GetFilesCount()
 }

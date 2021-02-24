@@ -69,18 +69,24 @@ func main() {
 		common.LogFatal("Failed to listen:", err)
 	}
 
+	headerCache, err := server.MakeFileCache(path.Join(settings.WorkingDir, "header-cache"))
+	if err != nil {
+		common.LogFatal("Failed to init header cache:", err)
+	}
+
 	grpcServer := grpc.NewServer(grpc.MaxRecvMsgSize(1024*1204*1024), grpc.MaxSendMsgSize(1024*1204*1024))
 	compilationServer := &server.CompilationServer{
 		StartTime:             time.Now(),
 		WorkingDir:            settings.WorkingDir,
-		HeaderCacheDir:        path.Join(settings.WorkingDir, "header-cache"),
 		GRPCServer:            grpcServer,
 		RemoteControlPassword: settings.Password,
 
-		ClientCache:      server.MakeUserCache(),
+		UserCache:        server.MakeUserCache(),
 		UploadingHeaders: server.MakeProcessingHeaders(),
 		SystemHeaders:    server.MakeSystemHeaderCache(),
-		Sessions:         server.MakeUserSessions(),
+		HeaderFileCache:  headerCache,
+
+		Sessions: server.MakeUserSessions(),
 	}
 	pb.RegisterCompilationServiceServer(grpcServer, compilationServer)
 	if err := grpcServer.Serve(lis); err != nil {
