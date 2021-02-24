@@ -6,16 +6,14 @@ option go_package = "github.com/AlexK0/popcorn/internal/api/popcorn";
 package popcorn;
 
 service CompilationService {
-   //rpc StartCompilationSession(StartCompilationSessionRequest) returns (StartCompilationSessionReply) {}
-
-    rpc CopyHeadersFromClientCache (CopyHeadersFromClientCacheRequest) returns (stream CopyHeadersFromClientCacheReply) {}
-    rpc CopyHeadersFromGlobalCache (CopyHeadersFromGlobalCacheRequest) returns (stream CopyHeadersFromGlobalCacheReply) {}
-    rpc CopyHeader (CopyHeaderRequest) returns (CopyHeaderReply) {}
-
+    // Compilation api
+    rpc StartCompilationSession(StartCompilationSessionRequest) returns (StartCompilationSessionReply) {}
+    rpc SendHeaderSHA256(SendHeaderSHA256Request) returns (SendHeaderSHA256Reply) {}
+    rpc SendHeader(SendHeaderRequest) returns (SendHeaderReply) {}
     rpc CompileSource (CompileSourceRequest) returns (CompileSourceReply) {}
+    rpc CloseSession(CloseSessionRequest) returns (CloseSessionReply) {}
 
-    rpc ClearEnvironment(ClearEnvironmentRequest) returns (ClearEnvironmentReply) {}
-
+    // Service api
     rpc Status(StatusRequest) returns (StatusReply) {}
     rpc UpdateServer(UpdateServerRequest) returns (UpdateServerReply) {}
     rpc RestartServer(RestartServerRequest) returns (RestartServerReply) {}
@@ -29,59 +27,48 @@ message SHA256Message {
     fixed64 B24_B31 = 4;
 }
 
-message HeaderClientMeta {
+message HeaderMetadata {
     string FilePath = 1;
     int64 MTime = 2;
 }
 
 message StartCompilationSessionRequest {
-
-}
-
-message CopyHeadersFromClientCacheRequest {
-    SHA256Message ClientID = 1;
-    repeated HeaderClientMeta ClientHeaders = 2;
-    bool ClearEnvironmentBeforeCopy = 3;
-}
-
-message CopyHeadersFromClientCacheReply {
-    int32 MissedHeaderIndex = 1;
-    bool FullCopyRequired = 2;
-}
-
-message HeaderGlobalMeta {
-    HeaderClientMeta ClientMeta = 1;
-    SHA256Message SHA256sum = 2;
-}
-
-message CopyHeadersFromGlobalCacheRequest {
-    SHA256Message ClientID = 1;
-    repeated HeaderGlobalMeta GlobalHeaders = 2;
-}
-
-message CopyHeadersFromGlobalCacheReply {
-    int32 MissedHeaderIndex = 1;
-}
-
-message HeaderFullData {
-    HeaderGlobalMeta GlobalMeta = 1;
-    bytes HeaderBody = 2;
-}
-
-message CopyHeaderRequest {
-    SHA256Message ClientID = 1;
-    HeaderFullData Header = 2;
-}
-
-message CopyHeaderReply {}
-
-message CompileSourceRequest {
-    SHA256Message ClientID = 1;
-    string FilePath = 2;
+    SHA256Message UserID = 1;
+    string SourceFilePath = 2;
     string Compiler = 3;
     repeated string CompilerArgs = 4;
-    bytes SourceBody = 5;
-    bool ClearEnvironmentAfterBuild = 6;
+    repeated HeaderMetadata RequiredHeaders = 5;
+}
+
+message StartCompilationSessionReply {
+    uint64 SessionID = 1;
+    repeated int32 MissedHeadersSHA256 = 2;
+    repeated int32 MissedHeadersFullCopy = 3;
+}
+
+message SendHeaderSHA256Request {
+    uint64 SessionID = 1;
+    int32 HeaderIndex = 2;
+    SHA256Message HeaderSHA256 = 3;
+}
+
+message SendHeaderSHA256Reply {
+    bool FullCopyRequired = 1;
+}
+
+message SendHeaderRequest {
+    uint64 SessionID = 1;
+    int32 HeaderIndex = 2;
+    bytes HeaderBody = 3;
+}
+
+message SendHeaderReply {
+}
+
+message CompileSourceRequest {
+    uint64 SessionID = 1;
+    bytes SourceBody = 2;
+    bool CloseSessionAfterBuild = 3;
 }
 
 message CompileSourceReply {
@@ -91,11 +78,11 @@ message CompileSourceReply {
     bytes CompilerStderr = 4;
 }
 
-message ClearEnvironmentRequest {
-    SHA256Message ClientID = 1;
+message CloseSessionRequest {
+    uint64 SessionID = 1;
 }
 
-message ClearEnvironmentReply {
+message CloseSessionReply {
 }
 
 message StatusRequest {}

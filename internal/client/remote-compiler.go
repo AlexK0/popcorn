@@ -1,7 +1,7 @@
 package client
 
 import (
-	"io"
+	"crypto/sha256"
 	"io/ioutil"
 
 	pb "github.com/AlexK0/popcorn/internal/api/proto/v1"
@@ -16,14 +16,15 @@ type RemoteCompiler struct {
 	remoteCmdArgs []string
 
 	grpcClient *GRPCClient
-	clientID   *pb.SHA256Message
+	userID     *pb.SHA256Message
+	sessionID  uint64
 
-	envCleanupRequired bool
+	needCloseSession bool
 }
 
 // MakeRemoteCompiler ...
 func MakeRemoteCompiler(localCompiler *LocalCompiler, serverHostPort string) (*RemoteCompiler, error) {
-	clientID, err := common.MakeUniqueClientID()
+	userID, err := common.MakeUniqueUserId()
 	if err != nil {
 		return nil, err
 	}
@@ -40,93 +41,75 @@ func MakeRemoteCompiler(localCompiler *LocalCompiler, serverHostPort string) (*R
 		remoteCmdArgs: localCompiler.MakeRemoteCmd(),
 
 		grpcClient: grpcClient,
-		clientID:   common.SHA256StructToSHA256Message(clientID),
+		userID:     userID,
 	}, nil
 }
 
-func (compiler *RemoteCompiler) copyHeaderAsync(headersFullCopy *pb.HeaderFullData, errorChannel chan<- error) {
-	_, err := compiler.grpcClient.Client.CopyHeader(
+func (compiler *RemoteCompiler) readHeaderAndSendSHA256OrBody(path string, index int32, wg *common.WaitGroupWithError) {
+	headerBody, err := ioutil.ReadFile(path)
+	if err != nil {
+		wg.Done(err)
+		return
+	}
+	reply, err := compiler.grpcClient.Client.SendHeaderSHA256(
 		compiler.grpcClient.CallContext,
-		&pb.CopyHeaderRequest{
-			ClientID: compiler.clientID,
-			Header:   headersFullCopy,
+		&pb.SendHeaderSHA256Request{
+			SessionID:    compiler.sessionID,
+			HeaderIndex:  index,
+			HeaderSHA256: common.SHA256StructToSHA256Message(common.MakeSHA256StructFromArray(sha256.Sum256(headerBody))),
 		})
-	errorChannel <- err
+	if err == nil && reply.FullCopyRequired {
+		_, err = compiler.grpcClient.Client.SendHeader(
+			compiler.grpcClient.CallContext,
+			&pb.SendHeaderRequest{
+				SessionID:   compiler.sessionID,
+				HeaderIndex: index,
+				HeaderBody:  headerBody,
+			})
+	}
+	wg.Done(err)
+}
+
+func (compiler *RemoteCompiler) readHeaderAndSend(path string, index int32, wg *common.WaitGroupWithError) {
+	headerBody, err := ioutil.ReadFile(path)
+	if err == nil {
+		_, err = compiler.grpcClient.Client.SendHeader(
+			compiler.grpcClient.CallContext,
+			&pb.SendHeaderRequest{
+				SessionID:   compiler.sessionID,
+				HeaderIndex: index,
+				HeaderBody:  headerBody,
+			})
+	}
+	wg.Done(err)
 }
 
 // SetupEnvironment ...
-func (compiler *RemoteCompiler) SetupEnvironment(headers []*pb.HeaderClientMeta) error {
-	compiler.envCleanupRequired = true
-	clientCacheStream, err := compiler.grpcClient.Client.CopyHeadersFromClientCache(
+func (compiler *RemoteCompiler) SetupEnvironment(headers []*pb.HeaderMetadata) error {
+	clientCacheStream, err := compiler.grpcClient.Client.StartCompilationSession(
 		compiler.grpcClient.CallContext,
-		&pb.CopyHeadersFromClientCacheRequest{
-			ClientID:                   compiler.clientID,
-			ClientHeaders:              headers,
-			ClearEnvironmentBeforeCopy: true,
+		&pb.StartCompilationSessionRequest{
+			UserID:          compiler.userID,
+			SourceFilePath:  compiler.inFile,
+			Compiler:        compiler.name,
+			CompilerArgs:    compiler.remoteCmdArgs,
+			RequiredHeaders: headers,
 		})
 	if err != nil {
 		return err
 	}
+	compiler.sessionID = clientCacheStream.SessionID
+	compiler.needCloseSession = true
 
-	copyHadersChannel := make(chan error)
-	copyHadersCount := 0
-
-	headersFullForGlobalCache := make([]*pb.HeaderFullData, 0, len(headers))
-	headersForGlobalCache := make([]*pb.HeaderGlobalMeta, 0, len(headers))
-	for {
-		copyRes, err := clientCacheStream.Recv()
-		if err == io.EOF {
-			break
-		}
-
-		if err != nil {
-			return err
-		}
-
-		fullHeader, err := MakeHeaderFullData(headers[int(copyRes.MissedHeaderIndex)])
-		if err != nil {
-			return err
-		}
-		if copyRes.FullCopyRequired {
-			copyHadersCount++
-			go compiler.copyHeaderAsync(fullHeader, copyHadersChannel)
-		} else {
-			headersFullForGlobalCache = append(headersFullForGlobalCache, fullHeader)
-			headersForGlobalCache = append(headersForGlobalCache, fullHeader.GlobalMeta)
-		}
+	wg := common.WaitGroupWithError{}
+	wg.Add(len(clientCacheStream.MissedHeadersSHA256) + len(clientCacheStream.MissedHeadersFullCopy))
+	for _, index := range clientCacheStream.MissedHeadersFullCopy {
+		go compiler.readHeaderAndSend(headers[index].FilePath, index, &wg)
 	}
-
-	globalCacheStream, err := compiler.grpcClient.Client.CopyHeadersFromGlobalCache(
-		compiler.grpcClient.CallContext,
-		&pb.CopyHeadersFromGlobalCacheRequest{
-			ClientID:      compiler.clientID,
-			GlobalHeaders: headersForGlobalCache,
-		})
-	if err != nil {
-		return err
+	for _, index := range clientCacheStream.MissedHeadersSHA256 {
+		go compiler.readHeaderAndSendSHA256OrBody(headers[index].FilePath, index, &wg)
 	}
-
-	for {
-		copyRes, err := globalCacheStream.Recv()
-		if err == io.EOF {
-			break
-		}
-
-		if err != nil {
-			return err
-		}
-
-		copyHadersCount++
-		go compiler.copyHeaderAsync(headersFullForGlobalCache[int(copyRes.MissedHeaderIndex)], copyHadersChannel)
-	}
-
-	for i := 0; i < copyHadersCount; i++ {
-		if copyResultErr := <-copyHadersChannel; copyResultErr != nil {
-			err = copyResultErr
-		}
-	}
-
-	return err
+	return wg.Wait()
 }
 
 // CompileSource ...
@@ -135,21 +118,18 @@ func (compiler *RemoteCompiler) CompileSource() (retCode int, stdout []byte, std
 	if err != nil {
 		return 0, nil, nil, err
 	}
-	compiler.envCleanupRequired = false
 	res, err := compiler.grpcClient.Client.CompileSource(
 		compiler.grpcClient.CallContext,
 		&pb.CompileSourceRequest{
-			ClientID:                   compiler.clientID,
-			FilePath:                   compiler.inFile,
-			Compiler:                   compiler.name,
-			CompilerArgs:               compiler.remoteCmdArgs,
-			SourceBody:                 sourceBody,
-			ClearEnvironmentAfterBuild: true,
+			SessionID:              compiler.sessionID,
+			SourceBody:             sourceBody,
+			CloseSessionAfterBuild: true,
 		})
 
 	if err != nil {
 		return 0, nil, nil, err
 	}
+	compiler.needCloseSession = false
 
 	if res.CompilerRetCode == 0 {
 		if err = common.WriteFile(compiler.outFile, res.CompiledSource); err != nil {
@@ -162,13 +142,13 @@ func (compiler *RemoteCompiler) CompileSource() (retCode int, stdout []byte, std
 
 // Clear ...
 func (compiler *RemoteCompiler) Clear() {
-	if compiler.envCleanupRequired {
-		_, _ = compiler.grpcClient.Client.ClearEnvironment(
+	if compiler.needCloseSession {
+		_, _ = compiler.grpcClient.Client.CloseSession(
 			compiler.grpcClient.CallContext,
-			&pb.ClearEnvironmentRequest{
-				ClientID: compiler.clientID,
+			&pb.CloseSessionRequest{
+				SessionID: compiler.sessionID,
 			})
 	}
-	compiler.envCleanupRequired = false
+	compiler.needCloseSession = false
 	compiler.grpcClient.Clear()
 }

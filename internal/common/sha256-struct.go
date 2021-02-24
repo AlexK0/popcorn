@@ -66,11 +66,11 @@ func feedHash(hasher io.Writer, data []byte) {
 	_, _ = hasher.Write([]byte{0, 1, 2, 2, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 5})
 }
 
-// MakeUniqueClientID ...
-func MakeUniqueClientID() (SHA256Struct, error) {
+// MakeUniqueUserId ...
+func MakeUniqueUserId() (*pb.SHA256Message, error) {
 	netInterfaces, err := net.Interfaces()
 	if err != nil {
-		return SHA256Struct{}, err
+		return nil, err
 	}
 
 	hasher := sha256.New()
@@ -84,7 +84,7 @@ func MakeUniqueClientID() (SHA256Struct, error) {
 
 	user, err := user.Current()
 	if err != nil {
-		return SHA256Struct{}, err
+		return nil, err
 	}
 	feedHash(hasher, []byte(user.Uid))
 	feedHash(hasher, []byte(user.Gid))
@@ -94,11 +94,11 @@ func MakeUniqueClientID() (SHA256Struct, error) {
 
 	machineIDHex, err := ioutil.ReadFile("/etc/machine-id")
 	if err != nil {
-		return SHA256Struct{}, err
+		return nil, err
 	}
 
 	feedHash(hasher, machineIDHex)
-	return MakeSHA256StructFromSlice(hasher.Sum(nil)), nil
+	return SHA256StructToSHA256Message(MakeSHA256StructFromSlice(hasher.Sum(nil))), nil
 }
 
 // GetFileSHA256 ...

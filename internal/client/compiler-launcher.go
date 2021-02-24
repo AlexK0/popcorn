@@ -3,8 +3,7 @@ package client
 import (
 	"errors"
 	"hash/fnv"
-	"sync"
-	"sync/atomic"
+	"os"
 
 	pb "github.com/AlexK0/popcorn/internal/api/proto/v1"
 	"github.com/AlexK0/popcorn/internal/common"
@@ -13,27 +12,25 @@ import (
 // ErrNoAvailableHosts ...
 var ErrNoAvailableHosts = errors.New("no available hosts for connection")
 
-func makeHeaderAsync(header string, destMeta **pb.HeaderClientMeta, destErr *error, errorFlag *int32, wg *sync.WaitGroup) {
-	var err error
-	if *destMeta, err = MakeClientHeaderMeta(header); err != nil {
-		if atomic.SwapInt32(errorFlag, 1) == 0 {
-			*destErr = err
+func makeHeaderAsync(headerPath string, destMeta **pb.HeaderMetadata, wg *common.WaitGroupWithError) {
+	headerStat, err := os.Stat(headerPath)
+	if err == nil {
+		*destMeta = &pb.HeaderMetadata{
+			FilePath: headerPath,
+			MTime:    headerStat.ModTime().UnixNano(),
 		}
 	}
-	wg.Done()
+	wg.Done(err)
 }
 
-func readHeadersMeta(headers []string) ([]*pb.HeaderClientMeta, error) {
-	wg := sync.WaitGroup{}
+func readHeadersMeta(headers []string) ([]*pb.HeaderMetadata, error) {
+	wg := common.WaitGroupWithError{}
 	wg.Add(len(headers))
-
-	var err error
-	var errorFlag int32
-	cachedHeaders := make([]*pb.HeaderClientMeta, len(headers))
+	cachedHeaders := make([]*pb.HeaderMetadata, len(headers))
 	for i, header := range headers {
-		go makeHeaderAsync(header, &cachedHeaders[i], &err, &errorFlag, &wg)
+		go makeHeaderAsync(header, &cachedHeaders[i], &wg)
 	}
-	wg.Wait()
+	err := wg.Wait()
 	return cachedHeaders, err
 }
 
@@ -54,7 +51,7 @@ func tryRemoteCompilation(localCompiler *LocalCompiler, settings *Settings) (ret
 		return 0, nil, nil, err
 	}
 
-	cachedHeaders, err := readHeadersMeta(headers)
+	headersMeta, err := readHeadersMeta(headers)
 	if err != nil {
 		return 0, nil, nil, err
 	}
@@ -66,7 +63,7 @@ func tryRemoteCompilation(localCompiler *LocalCompiler, settings *Settings) (ret
 	}
 	defer remoteCompiler.Clear()
 
-	if err = remoteCompiler.SetupEnvironment(cachedHeaders); err != nil {
+	if err = remoteCompiler.SetupEnvironment(headersMeta); err != nil {
 		return 0, nil, nil, err
 	}
 

@@ -11,7 +11,6 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -39,238 +38,173 @@ type CompilationServer struct {
 	ClientCache      *ClientCacheMap
 	UploadingHeaders *ProcessingHeadersMap
 	SystemHeaders    *SystemHeaderCache
-}
 
-func (s *CompilationServer) makeSysRoot(clientID *pb.SHA256Message) string {
-	return path.Join(s.WorkingDir, strconv.Itoa(int(clientID.B0_B7)), strconv.Itoa(int(clientID.B8_B15)), strconv.Itoa(int(clientID.B16_B23)), strconv.Itoa(int(clientID.B24_B31)))
+	Sessions *UserSessions
 }
 
 func (s *CompilationServer) makeCachedHeaderPath(headerPath string, headerSHA256 common.SHA256Struct) string {
 	return fmt.Sprintf("%s.%d.%d.%d.%d", path.Join(s.HeaderCacheDir, headerPath), headerSHA256.B0_7, headerSHA256.B8_15, headerSHA256.B16_23, headerSHA256.B24_31)
 }
 
-func (s *CompilationServer) tryLinkHeaderFromCache(sysRoot string, headerPath string, headerSHA256 common.SHA256Struct) (bool, error) {
+func (s *CompilationServer) tryLinkHeaderFromCache(workingDir string, headerPath string, headerSHA256 common.SHA256Struct) bool {
 	cachedHeaderPath := s.makeCachedHeaderPath(headerPath, headerSHA256)
-	headerPathInEnv := path.Join(sysRoot, headerPath)
+	headerPathInEnv := path.Join(workingDir, headerPath)
 	if err := os.MkdirAll(path.Dir(headerPathInEnv), os.ModePerm); err != nil {
-		return false, err
+		return false
 	}
-
-	err := os.Link(cachedHeaderPath, headerPathInEnv)
-	if err == nil {
-		return true, nil
-	}
-	if os.IsNotExist(err) {
-		return false, nil
-	}
-	return false, err
+	return os.Link(cachedHeaderPath, headerPathInEnv) == nil
 }
 
-type deferredHeader struct {
-	headerPath string
-	sha256sum  common.SHA256Struct
-	index      int
-}
-
-func (s *CompilationServer) waitDeferredHeaders(sysRoot string, headers []deferredHeader) (done []deferredHeader, stillDeferted []deferredHeader, err error) {
-	if len(headers) == 0 {
-		return nil, nil, nil
+// StartCompilationSession ...
+func (s *CompilationServer) StartCompilationSession(ctx context.Context, in *pb.StartCompilationSessionRequest) (*pb.StartCompilationSessionReply, error) {
+	userID := common.SHA256MessageToSHA256Struct(in.UserID)
+	session := &UserSession{
+		UserID:          userID,
+		Compiler:        in.Compiler,
+		CompilerArgs:    in.CompilerArgs,
+		RequiredHeaders: make([]RequiredHeaderMetadata, 0, len(in.RequiredHeaders)),
+		SourceFilePath:  in.SourceFilePath,
+		HeaderCache:     s.ClientCache.GetHeaderCache(userID),
 	}
 
-	done = make([]deferredHeader, 0, len(headers))
+	sessionID := s.Sessions.OpenNewSession(session)
+	session.WorkingDir = path.Join(s.WorkingDir, fmt.Sprint(sessionID))
+
+	if err := os.MkdirAll(session.WorkingDir, os.ModePerm); err != nil {
+		s.Sessions.CloseSession(sessionID)
+		return nil, fmt.Errorf("Can't create session working directory: %v", err)
+	}
+
+	missedHeadersSHA256 := make([]int32, 0, len(in.RequiredHeaders))
+	missedHeadersFullCopy := make([]int32, 0, len(in.RequiredHeaders))
+	for index, headerMetadata := range in.RequiredHeaders {
+		headerSHA256, ok := session.HeaderCache.GetHeaderSHA256(headerMetadata.FilePath, headerMetadata.MTime)
+		session.RequiredHeaders = append(session.RequiredHeaders, RequiredHeaderMetadata{
+			HeaderMetadata: headerMetadata,
+			SHA256Struct:   headerSHA256,
+		})
+		if !ok {
+			missedHeadersSHA256 = append(missedHeadersSHA256, int32(index))
+			continue
+		}
+		if systemSHA256 := s.SystemHeaders.GetSystemHeaderSHA256(headerMetadata.FilePath); systemSHA256 == headerSHA256 {
+			continue
+		}
+		if s.tryLinkHeaderFromCache(session.WorkingDir, headerMetadata.FilePath, headerSHA256) {
+			continue
+		}
+		if s.UploadingHeaders.StartHeaderProcessing(headerMetadata.FilePath, headerSHA256) {
+			missedHeadersFullCopy = append(missedHeadersFullCopy, int32(index))
+		} else {
+			missedHeadersSHA256 = append(missedHeadersSHA256, int32(index))
+		}
+	}
+
+	return &pb.StartCompilationSessionReply{
+		SessionID:             s.Sessions.OpenNewSession(session),
+		MissedHeadersSHA256:   missedHeadersSHA256,
+		MissedHeadersFullCopy: missedHeadersFullCopy,
+	}, nil
+}
+
+// SendHeaderSHA256 ...
+func (s *CompilationServer) SendHeaderSHA256(ctx context.Context, in *pb.SendHeaderSHA256Request) (*pb.SendHeaderSHA256Reply, error) {
+	session := s.Sessions.GetSession(in.SessionID)
+	if session == nil {
+		return nil, fmt.Errorf("Unknown SessionID %d", in.SessionID)
+	}
+
+	headerMetadata := &session.RequiredHeaders[in.HeaderIndex]
+	headerMetadata.SHA256Struct = common.SHA256MessageToSHA256Struct(in.HeaderSHA256)
+	session.HeaderCache.SetHeaderSHA256(headerMetadata.FilePath, headerMetadata.MTime, headerMetadata.SHA256Struct)
+	if systemSHA256 := s.SystemHeaders.GetSystemHeaderSHA256(headerMetadata.FilePath); systemSHA256 == headerMetadata.SHA256Struct {
+		return &pb.SendHeaderSHA256Reply{}, nil
+	}
 
 	start := time.Now()
 	// TODO Why 6 seconds?
-	for len(headers) != 0 && time.Since(start) < 6*time.Second {
+	for time.Since(start) < 6*time.Second {
+		if s.tryLinkHeaderFromCache(session.WorkingDir, headerMetadata.FilePath, headerMetadata.SHA256Struct) {
+			return &pb.SendHeaderSHA256Reply{}, nil
+		}
+		if s.UploadingHeaders.StartHeaderProcessing(headerMetadata.FilePath, headerMetadata.SHA256Struct) {
+			return &pb.SendHeaderSHA256Reply{FullCopyRequired: true}, nil
+		}
 		// TODO Why 100 milliseconds?
 		time.Sleep(100 * time.Millisecond)
-		stillDeferted = make([]deferredHeader, 0, len(headers)-len(done))
-		for _, h := range headers {
-			linkCreated, err := s.tryLinkHeaderFromCache(sysRoot, h.headerPath, h.sha256sum)
-			if err != nil {
-				return nil, nil, err
-			}
-			if linkCreated {
-				done = append(done, h)
-			} else {
-				stillDeferted = append(stillDeferted, h)
-			}
-		}
-		headers = stillDeferted
 	}
 
-	return
+	s.UploadingHeaders.ForceStartHeaderProcessing(headerMetadata.FilePath, headerMetadata.SHA256Struct)
+	return &pb.SendHeaderSHA256Reply{FullCopyRequired: true}, nil
 }
 
-// CopyHeadersFromClientCache ...
-func (s *CompilationServer) CopyHeadersFromClientCache(in *pb.CopyHeadersFromClientCacheRequest, out pb.CompilationService_CopyHeadersFromClientCacheServer) error {
-	sysRoot := s.makeSysRoot(in.ClientID)
-	if in.ClearEnvironmentBeforeCopy {
-		if err := os.RemoveAll(sysRoot); err != nil {
-			return err
-		}
+// SendHeader ...
+func (s *CompilationServer) SendHeader(ctx context.Context, in *pb.SendHeaderRequest) (*pb.SendHeaderReply, error) {
+	session := s.Sessions.GetSession(in.SessionID)
+	if session == nil {
+		return nil, fmt.Errorf("Unknown SessionID %d", in.SessionID)
 	}
 
-	deferredHeadersForCopy := make([]deferredHeader, 0, 16)
-	headerCache := s.ClientCache.GetHeaderCache(common.SHA256MessageToSHA256Struct(in.ClientID))
-	for index, header := range in.ClientHeaders {
-		headerSHA256, ok := headerCache.GetHeaderSHA256(header.FilePath, header.MTime)
-		if !ok {
-			if err := out.Send(&pb.CopyHeadersFromClientCacheReply{MissedHeaderIndex: int32(index), FullCopyRequired: false}); err != nil {
-				return err
-			}
-			continue
-		}
-
-		if systemSHA256 := s.SystemHeaders.GetSystemHeaderSHA256(header.FilePath); systemSHA256 == headerSHA256 {
-			continue
-		}
-		linkCreated, err := s.tryLinkHeaderFromCache(sysRoot, header.FilePath, headerSHA256)
-		if err != nil {
-			return err
-		}
-		if linkCreated {
-			continue
-		}
-		if s.UploadingHeaders.StartHeaderProcessing(header.FilePath, headerSHA256) {
-			if err := out.Send(&pb.CopyHeadersFromClientCacheReply{MissedHeaderIndex: int32(index), FullCopyRequired: true}); err != nil {
-				s.UploadingHeaders.FinishHeaderProcessing(header.FilePath, headerSHA256)
-				return err
-			}
-		} else {
-			deferredHeadersForCopy = append(deferredHeadersForCopy, deferredHeader{header.FilePath, headerSHA256, index})
-		}
+	headerMetadata := &session.RequiredHeaders[in.HeaderIndex]
+	defer s.UploadingHeaders.FinishHeaderProcessing(headerMetadata.FilePath, headerMetadata.SHA256Struct)
+	if s.tryLinkHeaderFromCache(session.WorkingDir, headerMetadata.FilePath, headerMetadata.SHA256Struct) {
+		return &pb.SendHeaderReply{}, nil
 	}
 
-	_, stillDeferred, err := s.waitDeferredHeaders(sysRoot, deferredHeadersForCopy)
-	if err != nil {
-		return err
+	headerWorkingDirPath := path.Join(session.WorkingDir, headerMetadata.FilePath)
+	if err := common.WriteFile(headerWorkingDirPath, in.HeaderBody); err != nil {
+		return nil, fmt.Errorf("Can't save header: %v", err)
 	}
 
-	for _, h := range stillDeferred {
-		s.UploadingHeaders.ForceStartHeaderProcessing(h.headerPath, h.sha256sum)
-		if err := out.Send(&pb.CopyHeadersFromClientCacheReply{MissedHeaderIndex: int32(h.index), FullCopyRequired: true}); err != nil {
-			s.UploadingHeaders.FinishHeaderProcessing(h.headerPath, h.sha256sum)
-			return err
-		}
-	}
+	headerCachePath := s.makeCachedHeaderPath(headerMetadata.FilePath, headerMetadata.SHA256Struct)
+	_ = os.MkdirAll(path.Dir(headerCachePath), os.ModePerm)
+	_ = os.Link(headerWorkingDirPath, headerCachePath)
 
-	return nil
+	return &pb.SendHeaderReply{}, nil
 }
 
-// CopyHeadersFromGlobalCache ...
-func (s *CompilationServer) CopyHeadersFromGlobalCache(in *pb.CopyHeadersFromGlobalCacheRequest, out pb.CompilationService_CopyHeadersFromGlobalCacheServer) error {
-	sysRoot := s.makeSysRoot(in.ClientID)
-	headerCache := s.ClientCache.GetHeaderCache(common.SHA256MessageToSHA256Struct(in.ClientID))
-	deferredHeadersForCopy := make([]deferredHeader, 0, 16)
-	for index, header := range in.GlobalHeaders {
-		headerSHA256 := common.SHA256MessageToSHA256Struct(header.SHA256Sum)
-		if systemSHA256 := s.SystemHeaders.GetSystemHeaderSHA256(header.ClientMeta.FilePath); systemSHA256 == headerSHA256 {
-			headerCache.SetHeaderSHA256(header.ClientMeta.FilePath, header.ClientMeta.MTime, headerSHA256)
-			continue
-		}
-		linkCreated, err := s.tryLinkHeaderFromCache(sysRoot, header.ClientMeta.FilePath, headerSHA256)
-		if err != nil {
-			return err
-		}
-		if linkCreated {
-			headerCache.SetHeaderSHA256(header.ClientMeta.FilePath, header.ClientMeta.MTime, headerSHA256)
-			continue
-		}
-		if s.UploadingHeaders.StartHeaderProcessing(header.ClientMeta.FilePath, headerSHA256) {
-			if err := out.Send(&pb.CopyHeadersFromGlobalCacheReply{MissedHeaderIndex: int32(index)}); err != nil {
-				s.UploadingHeaders.FinishHeaderProcessing(header.ClientMeta.FilePath, headerSHA256)
-				return err
-			}
-		} else {
-			deferredHeadersForCopy = append(deferredHeadersForCopy, deferredHeader{header.ClientMeta.FilePath, headerSHA256, index})
-		}
-	}
-
-	done, stillDeferred, err := s.waitDeferredHeaders(sysRoot, deferredHeadersForCopy)
-	if err != nil {
-		return err
-	}
-	for _, h := range done {
-		headerCache.SetHeaderSHA256(h.headerPath, in.GlobalHeaders[h.index].ClientMeta.MTime, h.sha256sum)
-	}
-	for _, h := range stillDeferred {
-		s.UploadingHeaders.ForceStartHeaderProcessing(h.headerPath, h.sha256sum)
-		if err := out.Send(&pb.CopyHeadersFromGlobalCacheReply{MissedHeaderIndex: int32(h.index)}); err != nil {
-			s.UploadingHeaders.FinishHeaderProcessing(h.headerPath, h.sha256sum)
-			return err
-		}
-	}
-
-	return nil
-}
-
-// CopyHeader ...
-func (s *CompilationServer) CopyHeader(ctx context.Context, in *pb.CopyHeaderRequest) (*pb.CopyHeaderReply, error) {
-	headerSHA256 := common.SHA256MessageToSHA256Struct(in.Header.GlobalMeta.SHA256Sum)
-	defer s.UploadingHeaders.FinishHeaderProcessing(in.Header.GlobalMeta.ClientMeta.FilePath, headerSHA256)
-
-	sysRoot := s.makeSysRoot(in.ClientID)
-	headerCache := s.ClientCache.GetHeaderCache(common.SHA256MessageToSHA256Struct(in.ClientID))
-	if linkCreated, _ := s.tryLinkHeaderFromCache(sysRoot, in.Header.GlobalMeta.ClientMeta.FilePath, headerSHA256); linkCreated {
-		headerCache.SetHeaderSHA256(in.Header.GlobalMeta.ClientMeta.FilePath, in.Header.GlobalMeta.ClientMeta.MTime, headerSHA256)
-		common.LogInfo("Useless copy, header has been found in cache:", in.Header.GlobalMeta.ClientMeta.FilePath)
-		return &pb.CopyHeaderReply{}, nil
-	}
-
-	headerPathInEnv := path.Join(sysRoot, in.Header.GlobalMeta.ClientMeta.FilePath)
-	if err := common.WriteFile(headerPathInEnv, in.Header.HeaderBody); err != nil {
-		return nil, fmt.Errorf("Can't save copying header: %v", err)
-	}
-
-	common.LogInfo("Header has been saved on disk:", in.Header.GlobalMeta.ClientMeta.FilePath)
-	cachedHeaderPath := s.makeCachedHeaderPath(in.Header.GlobalMeta.ClientMeta.FilePath, headerSHA256)
-	_ = os.MkdirAll(path.Dir(cachedHeaderPath), os.ModePerm)
-	if err := os.Link(headerPathInEnv, cachedHeaderPath); err == nil || os.IsExist(err) {
-		headerCache.SetHeaderSHA256(in.Header.GlobalMeta.ClientMeta.FilePath, in.Header.GlobalMeta.ClientMeta.MTime, headerSHA256)
-	}
-
-	return &pb.CopyHeaderReply{}, nil
-}
-
-func removeDir(dirPath string, remove bool) {
-	if remove {
-		_ = os.RemoveAll(dirPath)
+func (s *CompilationServer) closeSession(session *UserSession, sessionID uint64, close bool) {
+	if close {
+		s.Sessions.CloseSession(sessionID)
+		_ = os.RemoveAll(session.WorkingDir)
 	}
 }
 
 // CompileSource ....
 func (s *CompilationServer) CompileSource(ctx context.Context, in *pb.CompileSourceRequest) (*pb.CompileSourceReply, error) {
-	sysRootPath := s.makeSysRoot(in.ClientID)
+	session := s.Sessions.GetSession(in.SessionID)
+	if session == nil {
+		return nil, fmt.Errorf("Unknown SessionID %d", in.SessionID)
+	}
 
-	defer removeDir(sysRootPath, in.ClearEnvironmentAfterBuild)
+	defer s.closeSession(session, in.SessionID, in.CloseSessionAfterBuild)
 
-	inFileFull := path.Join(sysRootPath, in.FilePath)
+	inFileFull := path.Join(session.WorkingDir, session.SourceFilePath)
 	err := common.WriteFile(inFileFull, in.SourceBody)
 	if err != nil {
 		return nil, fmt.Errorf("Can't write source for compilation: %v", err)
 	}
 
-	compilerArgs := make([]string, 0, 3+len(in.CompilerArgs))
-	for i := 0; i < len(in.CompilerArgs); i++ {
-		arg := in.CompilerArgs[i]
-		if (arg == "-I" || arg == "-isystem" || arg == "-iquote") && i+1 < len(in.CompilerArgs) {
-			includeDir := in.CompilerArgs[i+1]
-			includeDirFull := path.Join(sysRootPath, includeDir)
+	compilerArgs := make([]string, 0, 3+len(session.CompilerArgs))
+	for i := 0; i < len(session.CompilerArgs); i++ {
+		arg := session.CompilerArgs[i]
+		if (arg == "-I" || arg == "-isystem" || arg == "-iquote") && i+1 < len(session.CompilerArgs) {
+			includeDir := session.CompilerArgs[i+1]
+			includeDirFull := path.Join(session.WorkingDir, includeDir)
 			if _, err = os.Stat(includeDirFull); err != nil && os.IsNotExist(err) {
 				i++
 				continue
 			}
-			in.CompilerArgs[i+1] = strings.TrimLeft(includeDir, "/")
+			session.CompilerArgs[i+1] = strings.TrimLeft(includeDir, "/")
 		}
 		compilerArgs = append(compilerArgs, arg)
 	}
-	inFile := strings.TrimLeft(in.FilePath, "/")
+	inFile := strings.TrimLeft(session.SourceFilePath, "/")
 	outFile := inFile + ".o"
 	compilerArgs = append(compilerArgs, inFile, "-o", outFile)
 
-	compilerProc := exec.Command(in.Compiler, compilerArgs...)
-	compilerProc.Dir = sysRootPath
+	compilerProc := exec.Command(session.Compiler, compilerArgs...)
+	compilerProc.Dir = session.WorkingDir
 	var compilerStderr, compilerStdout bytes.Buffer
 	compilerProc.Stderr = &compilerStderr
 	compilerProc.Stdout = &compilerStdout
@@ -278,7 +212,7 @@ func (s *CompilationServer) CompileSource(ctx context.Context, in *pb.CompileSou
 	common.LogInfo("Launch compiler:", compilerProc.Args)
 	_ = compilerProc.Run()
 
-	outFileFull := path.Join(sysRootPath, outFile)
+	outFileFull := path.Join(session.WorkingDir, outFile)
 	defer os.Remove(outFileFull)
 
 	var compiledSource []byte
@@ -295,13 +229,14 @@ func (s *CompilationServer) CompileSource(ctx context.Context, in *pb.CompileSou
 	}, nil
 }
 
-// ClearEnvironment ...
-func (s *CompilationServer) ClearEnvironment(ctx context.Context, in *pb.ClearEnvironmentRequest) (*pb.ClearEnvironmentReply, error) {
-	sysRoot := s.makeSysRoot(in.ClientID)
-	if err := os.RemoveAll(sysRoot); err != nil {
-		return nil, err
+// CloseSession ...
+func (s *CompilationServer) CloseSession(ctx context.Context, in *pb.CloseSessionRequest) (*pb.CloseSessionReply, error) {
+	session := s.Sessions.GetSession(in.SessionID)
+	if session == nil {
+		return nil, fmt.Errorf("Unknown SessionID %d", in.SessionID)
 	}
-	return &pb.ClearEnvironmentReply{}, nil
+	s.closeSession(session, in.SessionID, true)
+	return &pb.CloseSessionReply{}, nil
 }
 
 // Status ...

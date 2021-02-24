@@ -18,11 +18,13 @@ const _ = grpc.SupportPackageIsVersion7
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type CompilationServiceClient interface {
-	CopyHeadersFromClientCache(ctx context.Context, in *CopyHeadersFromClientCacheRequest, opts ...grpc.CallOption) (CompilationService_CopyHeadersFromClientCacheClient, error)
-	CopyHeadersFromGlobalCache(ctx context.Context, in *CopyHeadersFromGlobalCacheRequest, opts ...grpc.CallOption) (CompilationService_CopyHeadersFromGlobalCacheClient, error)
-	CopyHeader(ctx context.Context, in *CopyHeaderRequest, opts ...grpc.CallOption) (*CopyHeaderReply, error)
+	// Compilation api
+	StartCompilationSession(ctx context.Context, in *StartCompilationSessionRequest, opts ...grpc.CallOption) (*StartCompilationSessionReply, error)
+	SendHeaderSHA256(ctx context.Context, in *SendHeaderSHA256Request, opts ...grpc.CallOption) (*SendHeaderSHA256Reply, error)
+	SendHeader(ctx context.Context, in *SendHeaderRequest, opts ...grpc.CallOption) (*SendHeaderReply, error)
 	CompileSource(ctx context.Context, in *CompileSourceRequest, opts ...grpc.CallOption) (*CompileSourceReply, error)
-	ClearEnvironment(ctx context.Context, in *ClearEnvironmentRequest, opts ...grpc.CallOption) (*ClearEnvironmentReply, error)
+	CloseSession(ctx context.Context, in *CloseSessionRequest, opts ...grpc.CallOption) (*CloseSessionReply, error)
+	// Service api
 	Status(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (*StatusReply, error)
 	UpdateServer(ctx context.Context, in *UpdateServerRequest, opts ...grpc.CallOption) (*UpdateServerReply, error)
 	RestartServer(ctx context.Context, in *RestartServerRequest, opts ...grpc.CallOption) (*RestartServerReply, error)
@@ -37,73 +39,27 @@ func NewCompilationServiceClient(cc grpc.ClientConnInterface) CompilationService
 	return &compilationServiceClient{cc}
 }
 
-func (c *compilationServiceClient) CopyHeadersFromClientCache(ctx context.Context, in *CopyHeadersFromClientCacheRequest, opts ...grpc.CallOption) (CompilationService_CopyHeadersFromClientCacheClient, error) {
-	stream, err := c.cc.NewStream(ctx, &CompilationService_ServiceDesc.Streams[0], "/popcorn.CompilationService/CopyHeadersFromClientCache", opts...)
+func (c *compilationServiceClient) StartCompilationSession(ctx context.Context, in *StartCompilationSessionRequest, opts ...grpc.CallOption) (*StartCompilationSessionReply, error) {
+	out := new(StartCompilationSessionReply)
+	err := c.cc.Invoke(ctx, "/popcorn.CompilationService/StartCompilationSession", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
-	x := &compilationServiceCopyHeadersFromClientCacheClient{stream}
-	if err := x.ClientStream.SendMsg(in); err != nil {
-		return nil, err
-	}
-	if err := x.ClientStream.CloseSend(); err != nil {
-		return nil, err
-	}
-	return x, nil
+	return out, nil
 }
 
-type CompilationService_CopyHeadersFromClientCacheClient interface {
-	Recv() (*CopyHeadersFromClientCacheReply, error)
-	grpc.ClientStream
-}
-
-type compilationServiceCopyHeadersFromClientCacheClient struct {
-	grpc.ClientStream
-}
-
-func (x *compilationServiceCopyHeadersFromClientCacheClient) Recv() (*CopyHeadersFromClientCacheReply, error) {
-	m := new(CopyHeadersFromClientCacheReply)
-	if err := x.ClientStream.RecvMsg(m); err != nil {
-		return nil, err
-	}
-	return m, nil
-}
-
-func (c *compilationServiceClient) CopyHeadersFromGlobalCache(ctx context.Context, in *CopyHeadersFromGlobalCacheRequest, opts ...grpc.CallOption) (CompilationService_CopyHeadersFromGlobalCacheClient, error) {
-	stream, err := c.cc.NewStream(ctx, &CompilationService_ServiceDesc.Streams[1], "/popcorn.CompilationService/CopyHeadersFromGlobalCache", opts...)
+func (c *compilationServiceClient) SendHeaderSHA256(ctx context.Context, in *SendHeaderSHA256Request, opts ...grpc.CallOption) (*SendHeaderSHA256Reply, error) {
+	out := new(SendHeaderSHA256Reply)
+	err := c.cc.Invoke(ctx, "/popcorn.CompilationService/SendHeaderSHA256", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
-	x := &compilationServiceCopyHeadersFromGlobalCacheClient{stream}
-	if err := x.ClientStream.SendMsg(in); err != nil {
-		return nil, err
-	}
-	if err := x.ClientStream.CloseSend(); err != nil {
-		return nil, err
-	}
-	return x, nil
+	return out, nil
 }
 
-type CompilationService_CopyHeadersFromGlobalCacheClient interface {
-	Recv() (*CopyHeadersFromGlobalCacheReply, error)
-	grpc.ClientStream
-}
-
-type compilationServiceCopyHeadersFromGlobalCacheClient struct {
-	grpc.ClientStream
-}
-
-func (x *compilationServiceCopyHeadersFromGlobalCacheClient) Recv() (*CopyHeadersFromGlobalCacheReply, error) {
-	m := new(CopyHeadersFromGlobalCacheReply)
-	if err := x.ClientStream.RecvMsg(m); err != nil {
-		return nil, err
-	}
-	return m, nil
-}
-
-func (c *compilationServiceClient) CopyHeader(ctx context.Context, in *CopyHeaderRequest, opts ...grpc.CallOption) (*CopyHeaderReply, error) {
-	out := new(CopyHeaderReply)
-	err := c.cc.Invoke(ctx, "/popcorn.CompilationService/CopyHeader", in, out, opts...)
+func (c *compilationServiceClient) SendHeader(ctx context.Context, in *SendHeaderRequest, opts ...grpc.CallOption) (*SendHeaderReply, error) {
+	out := new(SendHeaderReply)
+	err := c.cc.Invoke(ctx, "/popcorn.CompilationService/SendHeader", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -119,9 +75,9 @@ func (c *compilationServiceClient) CompileSource(ctx context.Context, in *Compil
 	return out, nil
 }
 
-func (c *compilationServiceClient) ClearEnvironment(ctx context.Context, in *ClearEnvironmentRequest, opts ...grpc.CallOption) (*ClearEnvironmentReply, error) {
-	out := new(ClearEnvironmentReply)
-	err := c.cc.Invoke(ctx, "/popcorn.CompilationService/ClearEnvironment", in, out, opts...)
+func (c *compilationServiceClient) CloseSession(ctx context.Context, in *CloseSessionRequest, opts ...grpc.CallOption) (*CloseSessionReply, error) {
+	out := new(CloseSessionReply)
+	err := c.cc.Invoke(ctx, "/popcorn.CompilationService/CloseSession", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -168,11 +124,13 @@ func (c *compilationServiceClient) DumpServerLog(ctx context.Context, in *DumpSe
 // All implementations must embed UnimplementedCompilationServiceServer
 // for forward compatibility
 type CompilationServiceServer interface {
-	CopyHeadersFromClientCache(*CopyHeadersFromClientCacheRequest, CompilationService_CopyHeadersFromClientCacheServer) error
-	CopyHeadersFromGlobalCache(*CopyHeadersFromGlobalCacheRequest, CompilationService_CopyHeadersFromGlobalCacheServer) error
-	CopyHeader(context.Context, *CopyHeaderRequest) (*CopyHeaderReply, error)
+	// Compilation api
+	StartCompilationSession(context.Context, *StartCompilationSessionRequest) (*StartCompilationSessionReply, error)
+	SendHeaderSHA256(context.Context, *SendHeaderSHA256Request) (*SendHeaderSHA256Reply, error)
+	SendHeader(context.Context, *SendHeaderRequest) (*SendHeaderReply, error)
 	CompileSource(context.Context, *CompileSourceRequest) (*CompileSourceReply, error)
-	ClearEnvironment(context.Context, *ClearEnvironmentRequest) (*ClearEnvironmentReply, error)
+	CloseSession(context.Context, *CloseSessionRequest) (*CloseSessionReply, error)
+	// Service api
 	Status(context.Context, *StatusRequest) (*StatusReply, error)
 	UpdateServer(context.Context, *UpdateServerRequest) (*UpdateServerReply, error)
 	RestartServer(context.Context, *RestartServerRequest) (*RestartServerReply, error)
@@ -184,20 +142,20 @@ type CompilationServiceServer interface {
 type UnimplementedCompilationServiceServer struct {
 }
 
-func (UnimplementedCompilationServiceServer) CopyHeadersFromClientCache(*CopyHeadersFromClientCacheRequest, CompilationService_CopyHeadersFromClientCacheServer) error {
-	return status.Errorf(codes.Unimplemented, "method CopyHeadersFromClientCache not implemented")
+func (UnimplementedCompilationServiceServer) StartCompilationSession(context.Context, *StartCompilationSessionRequest) (*StartCompilationSessionReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StartCompilationSession not implemented")
 }
-func (UnimplementedCompilationServiceServer) CopyHeadersFromGlobalCache(*CopyHeadersFromGlobalCacheRequest, CompilationService_CopyHeadersFromGlobalCacheServer) error {
-	return status.Errorf(codes.Unimplemented, "method CopyHeadersFromGlobalCache not implemented")
+func (UnimplementedCompilationServiceServer) SendHeaderSHA256(context.Context, *SendHeaderSHA256Request) (*SendHeaderSHA256Reply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SendHeaderSHA256 not implemented")
 }
-func (UnimplementedCompilationServiceServer) CopyHeader(context.Context, *CopyHeaderRequest) (*CopyHeaderReply, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method CopyHeader not implemented")
+func (UnimplementedCompilationServiceServer) SendHeader(context.Context, *SendHeaderRequest) (*SendHeaderReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SendHeader not implemented")
 }
 func (UnimplementedCompilationServiceServer) CompileSource(context.Context, *CompileSourceRequest) (*CompileSourceReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CompileSource not implemented")
 }
-func (UnimplementedCompilationServiceServer) ClearEnvironment(context.Context, *ClearEnvironmentRequest) (*ClearEnvironmentReply, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method ClearEnvironment not implemented")
+func (UnimplementedCompilationServiceServer) CloseSession(context.Context, *CloseSessionRequest) (*CloseSessionReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CloseSession not implemented")
 }
 func (UnimplementedCompilationServiceServer) Status(context.Context, *StatusRequest) (*StatusReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Status not implemented")
@@ -224,62 +182,56 @@ func RegisterCompilationServiceServer(s grpc.ServiceRegistrar, srv CompilationSe
 	s.RegisterService(&CompilationService_ServiceDesc, srv)
 }
 
-func _CompilationService_CopyHeadersFromClientCache_Handler(srv interface{}, stream grpc.ServerStream) error {
-	m := new(CopyHeadersFromClientCacheRequest)
-	if err := stream.RecvMsg(m); err != nil {
-		return err
-	}
-	return srv.(CompilationServiceServer).CopyHeadersFromClientCache(m, &compilationServiceCopyHeadersFromClientCacheServer{stream})
-}
-
-type CompilationService_CopyHeadersFromClientCacheServer interface {
-	Send(*CopyHeadersFromClientCacheReply) error
-	grpc.ServerStream
-}
-
-type compilationServiceCopyHeadersFromClientCacheServer struct {
-	grpc.ServerStream
-}
-
-func (x *compilationServiceCopyHeadersFromClientCacheServer) Send(m *CopyHeadersFromClientCacheReply) error {
-	return x.ServerStream.SendMsg(m)
-}
-
-func _CompilationService_CopyHeadersFromGlobalCache_Handler(srv interface{}, stream grpc.ServerStream) error {
-	m := new(CopyHeadersFromGlobalCacheRequest)
-	if err := stream.RecvMsg(m); err != nil {
-		return err
-	}
-	return srv.(CompilationServiceServer).CopyHeadersFromGlobalCache(m, &compilationServiceCopyHeadersFromGlobalCacheServer{stream})
-}
-
-type CompilationService_CopyHeadersFromGlobalCacheServer interface {
-	Send(*CopyHeadersFromGlobalCacheReply) error
-	grpc.ServerStream
-}
-
-type compilationServiceCopyHeadersFromGlobalCacheServer struct {
-	grpc.ServerStream
-}
-
-func (x *compilationServiceCopyHeadersFromGlobalCacheServer) Send(m *CopyHeadersFromGlobalCacheReply) error {
-	return x.ServerStream.SendMsg(m)
-}
-
-func _CompilationService_CopyHeader_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CopyHeaderRequest)
+func _CompilationService_StartCompilationSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StartCompilationSessionRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(CompilationServiceServer).CopyHeader(ctx, in)
+		return srv.(CompilationServiceServer).StartCompilationSession(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/popcorn.CompilationService/CopyHeader",
+		FullMethod: "/popcorn.CompilationService/StartCompilationSession",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(CompilationServiceServer).CopyHeader(ctx, req.(*CopyHeaderRequest))
+		return srv.(CompilationServiceServer).StartCompilationSession(ctx, req.(*StartCompilationSessionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CompilationService_SendHeaderSHA256_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SendHeaderSHA256Request)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CompilationServiceServer).SendHeaderSHA256(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/popcorn.CompilationService/SendHeaderSHA256",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CompilationServiceServer).SendHeaderSHA256(ctx, req.(*SendHeaderSHA256Request))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CompilationService_SendHeader_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SendHeaderRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CompilationServiceServer).SendHeader(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/popcorn.CompilationService/SendHeader",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CompilationServiceServer).SendHeader(ctx, req.(*SendHeaderRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -302,20 +254,20 @@ func _CompilationService_CompileSource_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
-func _CompilationService_ClearEnvironment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ClearEnvironmentRequest)
+func _CompilationService_CloseSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CloseSessionRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(CompilationServiceServer).ClearEnvironment(ctx, in)
+		return srv.(CompilationServiceServer).CloseSession(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/popcorn.CompilationService/ClearEnvironment",
+		FullMethod: "/popcorn.CompilationService/CloseSession",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(CompilationServiceServer).ClearEnvironment(ctx, req.(*ClearEnvironmentRequest))
+		return srv.(CompilationServiceServer).CloseSession(ctx, req.(*CloseSessionRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -400,16 +352,24 @@ var CompilationService_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*CompilationServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "CopyHeader",
-			Handler:    _CompilationService_CopyHeader_Handler,
+			MethodName: "StartCompilationSession",
+			Handler:    _CompilationService_StartCompilationSession_Handler,
+		},
+		{
+			MethodName: "SendHeaderSHA256",
+			Handler:    _CompilationService_SendHeaderSHA256_Handler,
+		},
+		{
+			MethodName: "SendHeader",
+			Handler:    _CompilationService_SendHeader_Handler,
 		},
 		{
 			MethodName: "CompileSource",
 			Handler:    _CompilationService_CompileSource_Handler,
 		},
 		{
-			MethodName: "ClearEnvironment",
-			Handler:    _CompilationService_ClearEnvironment_Handler,
+			MethodName: "CloseSession",
+			Handler:    _CompilationService_CloseSession_Handler,
 		},
 		{
 			MethodName: "Status",
@@ -428,17 +388,6 @@ var CompilationService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _CompilationService_DumpServerLog_Handler,
 		},
 	},
-	Streams: []grpc.StreamDesc{
-		{
-			StreamName:    "CopyHeadersFromClientCache",
-			Handler:       _CompilationService_CopyHeadersFromClientCache_Handler,
-			ServerStreams: true,
-		},
-		{
-			StreamName:    "CopyHeadersFromGlobalCache",
-			Handler:       _CompilationService_CopyHeadersFromGlobalCache_Handler,
-			ServerStreams: true,
-		},
-	},
+	Streams:  []grpc.StreamDesc{},
 	Metadata: "api/proto/v1/compilation-server.proto",
 }

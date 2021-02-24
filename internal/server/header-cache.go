@@ -14,14 +14,14 @@ type headerMeta struct {
 	mtime     int64
 }
 
-// ClientHeaderCache ...
-type ClientHeaderCache struct {
+// UserHeaderCache ...
+type UserHeaderCache struct {
 	headersMeta map[string]headerMeta
 	mu          sync.RWMutex
 }
 
 // GetHeaderSHA256 ...
-func (headerCache *ClientHeaderCache) GetHeaderSHA256(headerPath string, headerMTime int64) (common.SHA256Struct, bool) {
+func (headerCache *UserHeaderCache) GetHeaderSHA256(headerPath string, headerMTime int64) (common.SHA256Struct, bool) {
 	headerCache.mu.RLock()
 	meta, ok := headerCache.headersMeta[headerPath]
 	headerCache.mu.RUnlock()
@@ -32,14 +32,14 @@ func (headerCache *ClientHeaderCache) GetHeaderSHA256(headerPath string, headerM
 }
 
 // SetHeaderSHA256 ...
-func (headerCache *ClientHeaderCache) SetHeaderSHA256(headerPath string, headerMTime int64, sha256sum common.SHA256Struct) {
+func (headerCache *UserHeaderCache) SetHeaderSHA256(headerPath string, headerMTime int64, sha256sum common.SHA256Struct) {
 	headerCache.mu.Lock()
 	headerCache.headersMeta[headerPath] = headerMeta{sha256sum, headerMTime}
 	headerCache.mu.Unlock()
 }
 
 // GetHeadersCount ...
-func (headerCache *ClientHeaderCache) GetHeadersCount() uint64 {
+func (headerCache *UserHeaderCache) GetHeadersCount() uint64 {
 	headerCache.mu.RLock()
 	elements := len(headerCache.headersMeta)
 	headerCache.mu.RUnlock()
@@ -48,19 +48,19 @@ func (headerCache *ClientHeaderCache) GetHeadersCount() uint64 {
 
 // ClientCacheMap ...
 type ClientCacheMap struct {
-	clients map[common.SHA256Struct]*ClientHeaderCache
+	clients map[common.SHA256Struct]*UserHeaderCache
 	mu      sync.RWMutex
 }
 
 // MakeClientCacheMap ...
 func MakeClientCacheMap() *ClientCacheMap {
 	return &ClientCacheMap{
-		clients: make(map[common.SHA256Struct]*ClientHeaderCache, 1024),
+		clients: make(map[common.SHA256Struct]*UserHeaderCache, 1024),
 	}
 }
 
 // GetHeaderCache ...
-func (clientMap *ClientCacheMap) GetHeaderCache(clientID common.SHA256Struct) *ClientHeaderCache {
+func (clientMap *ClientCacheMap) GetHeaderCache(clientID common.SHA256Struct) *UserHeaderCache {
 	clientMap.mu.RLock()
 	headerCache := clientMap.clients[clientID]
 	clientMap.mu.RUnlock()
@@ -69,7 +69,7 @@ func (clientMap *ClientCacheMap) GetHeaderCache(clientID common.SHA256Struct) *C
 		return headerCache
 	}
 
-	newHeaderCache := &ClientHeaderCache{
+	newHeaderCache := &UserHeaderCache{
 		headersMeta: make(map[string]headerMeta, 1024),
 	}
 
@@ -144,13 +144,13 @@ func (processingHeaders *ProcessingHeadersMap) FinishHeaderProcessing(headerPath
 
 // SystemHeaderCache ...
 type SystemHeaderCache struct {
-	cache ClientHeaderCache
+	cache UserHeaderCache
 }
 
 // MakeSystemHeaderCache ...
 func MakeSystemHeaderCache() *SystemHeaderCache {
 	return &SystemHeaderCache{
-		cache: ClientHeaderCache{headersMeta: make(map[string]headerMeta, 512)},
+		cache: UserHeaderCache{headersMeta: make(map[string]headerMeta, 512)},
 	}
 }
 
