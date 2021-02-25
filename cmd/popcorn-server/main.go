@@ -46,6 +46,7 @@ func main() {
 	flag.StringVar(&settings.WorkingDir, "working-dir", "/tmp/popcorn-server", "Directory for saving and compiling incoming files.")
 	flag.StringVar(&settings.LogFileName, "log-filename", "", "Logger file.")
 	flag.StringVar(&settings.LogSeverity, "log-severity", common.WarningSeverity, "Logger severity level.")
+	flag.Int64Var(&settings.HeaderCacheLimit, "header-cache-limit", 512*1024*1024, "Header cache limit in bytes.")
 
 	flag.Parse()
 
@@ -69,7 +70,7 @@ func main() {
 		common.LogFatal("Failed to listen:", err)
 	}
 
-	headerCache, err := server.MakeFileCache(path.Join(settings.WorkingDir, "header-cache"))
+	headerCache, err := server.MakeFileCache(path.Join(settings.WorkingDir, "header-cache"), settings.HeaderCacheLimit)
 	if err != nil {
 		common.LogFatal("Failed to init header cache:", err)
 	}
@@ -77,6 +78,7 @@ func main() {
 	grpcServer := grpc.NewServer(grpc.MaxRecvMsgSize(1024*1204*1024), grpc.MaxSendMsgSize(1024*1204*1024))
 	compilationServer := &server.CompilationServer{
 		StartTime:             time.Now(),
+		SessionsDir:           path.Join(settings.WorkingDir, "sessions"),
 		WorkingDir:            settings.WorkingDir,
 		GRPCServer:            grpcServer,
 		RemoteControlPassword: settings.Password,
@@ -89,10 +91,15 @@ func main() {
 		Sessions: server.MakeUserSessions(),
 	}
 	pb.RegisterCompilationServiceServer(grpcServer, compilationServer)
+
+	cron := server.Cron{Server: compilationServer}
+	cron.Start()
+
 	if err := grpcServer.Serve(lis); err != nil {
 		common.LogFatal("Failed to serve:", err)
 	}
 
+	cron.Stop()
 	grpcServer.Stop()
 	lis.Close()
 

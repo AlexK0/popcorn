@@ -9,4 +9,6 @@ type Settings struct {
 	WorkingDir  string
 	LogFileName string
 	LogSeverity string
+
+	HeaderCacheLimit int64
 }

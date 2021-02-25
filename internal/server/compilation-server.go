@@ -26,7 +26,8 @@ type CompilationServer struct {
 
 	StartTime time.Time
 
-	WorkingDir string
+	SessionsDir string
+	WorkingDir  string
 
 	GRPCServer                 *grpc.Server
 	RemoteControlPassword      string
@@ -55,7 +56,7 @@ func (s *CompilationServer) StartCompilationSession(ctx context.Context, in *pb.
 	}
 
 	sessionID := s.Sessions.OpenNewSession(session)
-	session.WorkingDir = path.Join(s.WorkingDir, fmt.Sprint(sessionID))
+	session.WorkingDir = path.Join(s.SessionsDir, fmt.Sprint(sessionID))
 
 	if err := os.MkdirAll(session.WorkingDir, os.ModePerm); err != nil {
 		s.Sessions.CloseSession(sessionID)
@@ -145,7 +146,7 @@ func (s *CompilationServer) SendHeader(ctx context.Context, in *pb.SendHeaderReq
 		return nil, fmt.Errorf("Can't save header: %v", err)
 	}
 
-	_ = s.HeaderFileCache.SaveFileToCache(headerPathInWorkingDir, headerMetadata.FilePath, headerMetadata.SHA256Struct)
+	_, _, _ = s.HeaderFileCache.SaveFileToCache(headerPathInWorkingDir, headerMetadata.FilePath, headerMetadata.SHA256Struct, int64(len(in.HeaderBody)))
 	return &pb.SendHeaderReply{}, nil
 }
 
@@ -229,14 +230,15 @@ func (s *CompilationServer) CloseSession(ctx context.Context, in *pb.CloseSessio
 func (s *CompilationServer) Status(ctx context.Context, in *pb.StatusRequest) (*pb.StatusReply, error) {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
+	cachedHeaderOnDiskCount, cachedHeaderOnDiskBytes := s.HeaderFileCache.GetFilesCountAndDiskUsage()
 	return &pb.StatusReply{
 		ServerVersion:           common.GetVersion(),
 		CPUsCount:               uint64(runtime.NumCPU()),
 		ActiveGoroutinesCount:   uint64(runtime.NumGoroutine()),
 		ClientsCount:            s.UserCache.GetCachesCount(),
 		SystemHeadersUsedCount:  s.SystemHeaders.GetSystemHeadersCacheSize(),
-		CachedHeaderOnDiskCount: 0,
-		CachedHeaderOnDiskBytes: 0,
+		CachedHeaderOnDiskCount: uint64(cachedHeaderOnDiskCount),
+		CachedHeaderOnDiskBytes: uint64(cachedHeaderOnDiskBytes),
 		HeapAllocBytes:          m.HeapAlloc,
 		SystemAllocBytes:        m.Sys,
 		UptimeNanoseconds:       uint64(time.Since(s.StartTime).Nanoseconds()),
