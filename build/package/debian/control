@@ -1,0 +1,20 @@
+Source: popcorn
+Section: misc
+Priority: optional
+Maintainer: Alexander Korepanov <korepanov.sasha@gmail.com>
+Build-Depends: debhelper (>= 9)
+Standards-Version: 3.9.5
+Homepage: https://github.com/AlexK0/popcorn
+
+Package: popcorn-server
+Architecture: amd64
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: Popcorn server
+ Popcorn server
+
+Package: popcorn-client
+Architecture: amd64
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: Popcorn client
+ Popcorn client
+ 

@@ -21,4 +21,4 @@ all: check client server
 .PHONY : all
 
 clean:
-	rm internal/api/proto/v1/* popcorn-client popcorn-server
+	rm bin/popcorn-client bin/popcorn-server
