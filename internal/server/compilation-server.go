@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -35,16 +34,20 @@ type CompilationServer struct {
 
 	remoteControlLock sync.Mutex
 
-	UserCache        *UserCache
+	UserCaches       *UserCaches
 	UploadingHeaders *SendingHeaders
 	SystemHeaders    *SystemHeaderCache
 	HeaderFileCache  *FileCache
 
 	Sessions *UserSessions
+
+	Stats *CompilationServerStats
 }
 
 // StartCompilationSession ...
 func (s *CompilationServer) StartCompilationSession(ctx context.Context, in *pb.StartCompilationSessionRequest) (*pb.StartCompilationSessionReply, error) {
+	callObserver := s.Stats.StartCompilationSession.StartRPCCall()
+
 	userID := common.SHA256MessageToSHA256Struct(in.UserID)
 	session := &UserSession{
 		UserID:          userID,
@@ -52,7 +55,7 @@ func (s *CompilationServer) StartCompilationSession(ctx context.Context, in *pb.
 		CompilerArgs:    in.CompilerArgs,
 		RequiredHeaders: make([]RequiredHeaderMetadata, 0, len(in.RequiredHeaders)),
 		SourceFilePath:  in.SourceFilePath,
-		FileSHA256Cache: s.UserCache.GetFilesCache(userID),
+		FileSHA256Cache: s.UserCaches.GetFilesCache(userID),
 	}
 
 	sessionID := s.Sessions.OpenNewSession(session)
@@ -60,9 +63,11 @@ func (s *CompilationServer) StartCompilationSession(ctx context.Context, in *pb.
 
 	if err := os.MkdirAll(session.WorkingDir, os.ModePerm); err != nil {
 		s.Sessions.CloseSession(sessionID)
+		callObserver.FinishWithError()
 		return nil, fmt.Errorf("Can't create session working directory: %v", err)
 	}
 
+	defer callObserver.Finish()
 	missedHeadersSHA256 := make([]int32, 0, len(in.RequiredHeaders))
 	missedHeadersFullCopy := make([]int32, 0, len(in.RequiredHeaders))
 	for index, headerMetadata := range in.RequiredHeaders {
@@ -98,11 +103,15 @@ func (s *CompilationServer) StartCompilationSession(ctx context.Context, in *pb.
 
 // SendHeaderSHA256 ...
 func (s *CompilationServer) SendHeaderSHA256(ctx context.Context, in *pb.SendHeaderSHA256Request) (*pb.SendHeaderSHA256Reply, error) {
+	callObserver := s.Stats.SendHeaderSHA256.StartRPCCall()
+
 	session := s.Sessions.GetSession(in.SessionID)
 	if session == nil {
+		callObserver.FinishWithError()
 		return nil, fmt.Errorf("Unknown SessionID %d", in.SessionID)
 	}
 
+	defer callObserver.Finish()
 	headerMetadata := &session.RequiredHeaders[in.HeaderIndex]
 	headerMetadata.SHA256Struct = common.SHA256MessageToSHA256Struct(in.HeaderSHA256)
 	session.FileSHA256Cache.SetFileSHA256(headerMetadata.FilePath, headerMetadata.MTime, headerMetadata.SHA256Struct)
@@ -130,8 +139,11 @@ func (s *CompilationServer) SendHeaderSHA256(ctx context.Context, in *pb.SendHea
 
 // SendHeader ...
 func (s *CompilationServer) SendHeader(ctx context.Context, in *pb.SendHeaderRequest) (*pb.SendHeaderReply, error) {
+	callObserver := s.Stats.SendHeader.StartRPCCall()
+
 	session := s.Sessions.GetSession(in.SessionID)
 	if session == nil {
+		callObserver.FinishWithError()
 		return nil, fmt.Errorf("Unknown SessionID %d", in.SessionID)
 	}
 
@@ -139,14 +151,19 @@ func (s *CompilationServer) SendHeader(ctx context.Context, in *pb.SendHeaderReq
 	defer s.UploadingHeaders.FinishHeaderSending(headerMetadata.FilePath, headerMetadata.SHA256Struct)
 	headerPathInWorkingDir := path.Join(session.WorkingDir, headerMetadata.FilePath)
 	if s.HeaderFileCache.CreateLinkFromCache(headerMetadata.FilePath, headerMetadata.SHA256Struct, headerPathInWorkingDir) {
+		s.Stats.SendingHeadersDoubleReceived.Increment()
+		callObserver.Finish()
 		return &pb.SendHeaderReply{}, nil
 	}
 
 	if err := common.WriteFile(headerPathInWorkingDir, in.HeaderBody); err != nil {
+		callObserver.FinishWithError()
 		return nil, fmt.Errorf("Can't save header: %v", err)
 	}
 
-	_, _, _ = s.HeaderFileCache.SaveFileToCache(headerPathInWorkingDir, headerMetadata.FilePath, headerMetadata.SHA256Struct, int64(len(in.HeaderBody)))
+	s.Stats.SendingHeadersReceived.Increment()
+	_, _ = s.HeaderFileCache.SaveFileToCache(headerPathInWorkingDir, headerMetadata.FilePath, headerMetadata.SHA256Struct, int64(len(in.HeaderBody)))
+	callObserver.Finish()
 	return &pb.SendHeaderReply{}, nil
 }
 
@@ -159,8 +176,11 @@ func (s *CompilationServer) closeSession(session *UserSession, sessionID uint64,
 
 // CompileSource ....
 func (s *CompilationServer) CompileSource(ctx context.Context, in *pb.CompileSourceRequest) (*pb.CompileSourceReply, error) {
+	callObserver := s.Stats.CompileSource.StartRPCCall()
+
 	session := s.Sessions.GetSession(in.SessionID)
 	if session == nil {
+		callObserver.FinishWithError()
 		return nil, fmt.Errorf("Unknown SessionID %d", in.SessionID)
 	}
 
@@ -169,6 +189,7 @@ func (s *CompilationServer) CompileSource(ctx context.Context, in *pb.CompileSou
 	inFileFull := path.Join(session.WorkingDir, session.SourceFilePath)
 	err := common.WriteFile(inFileFull, in.SourceBody)
 	if err != nil {
+		callObserver.FinishWithError()
 		return nil, fmt.Errorf("Can't write source for compilation: %v", err)
 	}
 
@@ -205,9 +226,11 @@ func (s *CompilationServer) CompileSource(ctx context.Context, in *pb.CompileSou
 	var compiledSource []byte
 	if compilerProc.ProcessState.ExitCode() == 0 {
 		if compiledSource, err = ioutil.ReadFile(outFileFull); err != nil {
+			callObserver.FinishWithError()
 			return nil, fmt.Errorf("Can't read compiled source: %v", err)
 		}
 	}
+	callObserver.Finish()
 	return &pb.CompileSourceReply{
 		CompilerRetCode: int32(compilerProc.ProcessState.ExitCode()),
 		CompiledSource:  compiledSource,
@@ -218,30 +241,23 @@ func (s *CompilationServer) CompileSource(ctx context.Context, in *pb.CompileSou
 
 // CloseSession ...
 func (s *CompilationServer) CloseSession(ctx context.Context, in *pb.CloseSessionRequest) (*pb.CloseSessionReply, error) {
+	callObserver := s.Stats.CloseSession.StartRPCCall()
 	session := s.Sessions.GetSession(in.SessionID)
 	if session == nil {
+		callObserver.FinishWithError()
 		return nil, fmt.Errorf("Unknown SessionID %d", in.SessionID)
 	}
 	s.closeSession(session, in.SessionID, true)
+	callObserver.Finish()
 	return &pb.CloseSessionReply{}, nil
 }
 
 // Status ...
 func (s *CompilationServer) Status(ctx context.Context, in *pb.StatusRequest) (*pb.StatusReply, error) {
-	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
-	cachedHeaderOnDiskCount, cachedHeaderOnDiskBytes := s.HeaderFileCache.GetFilesCountAndDiskUsage()
 	return &pb.StatusReply{
-		ServerVersion:           common.GetVersion(),
-		CPUsCount:               uint64(runtime.NumCPU()),
-		ActiveGoroutinesCount:   uint64(runtime.NumGoroutine()),
-		ClientsCount:            s.UserCache.GetCachesCount(),
-		SystemHeadersUsedCount:  s.SystemHeaders.GetSystemHeadersCacheSize(),
-		CachedHeaderOnDiskCount: uint64(cachedHeaderOnDiskCount),
-		CachedHeaderOnDiskBytes: uint64(cachedHeaderOnDiskBytes),
-		HeapAllocBytes:          m.HeapAlloc,
-		SystemAllocBytes:        m.Sys,
-		UptimeNanoseconds:       uint64(time.Since(s.StartTime).Nanoseconds()),
+		ServerVersion: common.GetVersion(),
+		ServerArgs:    os.Args,
+		ServerStats:   s.Stats.GetStatsRawBytes(s),
 	}, nil
 }
 

@@ -75,11 +75,11 @@ func PerformCompilation(compilerCmdLine []string, settings *Settings) (retCode i
 	localCompiler := MakeLocalCompiler(compilerCmdLine)
 	if localCompiler.RemoteCompilationAllowed {
 		common.LogInfo("Trying remote compilaton")
-		if retCode, stdout, stderr, err := tryRemoteCompilation(localCompiler, settings); err == nil {
+		retCode, stdout, stderr, err := tryRemoteCompilation(localCompiler, settings)
+		if err == nil {
 			return retCode, stdout, stderr
-		} else {
-			common.LogError("Can't compile remotely:", err)
 		}
+		common.LogError("Can't compile remotely:", err)
 	}
 
 	return localCompiler.CompileLocally()

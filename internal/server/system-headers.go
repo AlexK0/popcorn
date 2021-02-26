@@ -42,7 +42,7 @@ func (systemHeaderCache *SystemHeaderCache) GetSystemHeaderSHA256(headerPath str
 	return sha256sum
 }
 
-// GetSystemHeadersCacheSize ...
-func (systemHeaderCache *SystemHeaderCache) GetSystemHeadersCacheSize() uint64 {
+// GetSystemHeadersCount ...
+func (systemHeaderCache *SystemHeaderCache) GetSystemHeadersCount() int64 {
 	return systemHeaderCache.systemHeaders.GetFilesCount()
 }

@@ -11,4 +11,6 @@ type Settings struct {
 	LogSeverity string
 
 	HeaderCacheLimit int64
+
+	StatsdAddress string
 }

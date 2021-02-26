@@ -16,6 +16,7 @@ type Cron struct {
 func (c *Cron) doCron() {
 	for atomic.LoadInt32(&c.stopFlag) == 0 {
 		cronStartTime := time.Now()
+		c.Server.Stats.SendStats(c.Server)
 
 		c.Server.HeaderFileCache.PurgeLastElementsIfRequired()
 

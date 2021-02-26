@@ -47,6 +47,7 @@ func main() {
 	flag.StringVar(&settings.LogFileName, "log-filename", "", "Logger file.")
 	flag.StringVar(&settings.LogSeverity, "log-severity", common.WarningSeverity, "Logger severity level.")
 	flag.Int64Var(&settings.HeaderCacheLimit, "header-cache-limit", 512*1024*1024, "Header cache limit in bytes.")
+	flag.StringVar(&settings.StatsdAddress, "statsd", "", "Statsd address.")
 
 	flag.Parse()
 
@@ -61,6 +62,11 @@ func main() {
 
 	if err := common.LoggerInit("popcorn-server", settings.LogFileName, settings.LogSeverity); err != nil {
 		common.LogFatal("Can't init logger", err)
+	}
+
+	serverStats, err := server.MakeServerStats(settings.StatsdAddress)
+	if err != nil {
+		common.LogFatal("Failed to connect to statsd:", err)
 	}
 
 	addr := fmt.Sprintf("%s:%d", settings.Host, settings.Port)
@@ -83,12 +89,14 @@ func main() {
 		GRPCServer:            grpcServer,
 		RemoteControlPassword: settings.Password,
 
-		UserCache:        server.MakeUserCache(),
+		UserCaches:       server.MakeUserCache(),
 		UploadingHeaders: server.MakeProcessingHeaders(),
 		SystemHeaders:    server.MakeSystemHeaderCache(),
 		HeaderFileCache:  headerCache,
 
 		Sessions: server.MakeUserSessions(),
+
+		Stats: serverStats,
 	}
 	pb.RegisterCompilationServiceServer(grpcServer, compilationServer)
 
@@ -101,6 +109,7 @@ func main() {
 
 	cron.Stop()
 	grpcServer.Stop()
+	serverStats.Close()
 	lis.Close()
 
 	if len(compilationServer.NewPopcornServerBinaryPath) != 0 {

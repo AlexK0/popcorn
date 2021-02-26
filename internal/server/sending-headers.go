@@ -52,3 +52,11 @@ func (processingHeaders *SendingHeaders) FinishHeaderSending(headerPath string, 
 	delete(processingHeaders.headers, key)
 	processingHeaders.mu.Unlock()
 }
+
+// SendingHeadersCount ...
+func (processingHeaders *SendingHeaders) SendingHeadersCount() int64 {
+	processingHeaders.mu.Lock()
+	count := len(processingHeaders.headers)
+	processingHeaders.mu.Unlock()
+	return int64(count)
+}

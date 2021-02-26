@@ -89,19 +89,8 @@ message StatusRequest {}
 
 message StatusReply {
     string ServerVersion = 1;
-
-    uint64 CPUsCount = 2;
-    uint64 ActiveGoroutinesCount = 3;
-    uint64 ClientsCount = 4;
-
-    uint64 SystemHeadersUsedCount = 5;
-    uint64 CachedHeaderOnDiskCount = 6;
-    uint64 CachedHeaderOnDiskBytes = 7;
-
-    uint64 HeapAllocBytes = 8;
-    uint64 SystemAllocBytes = 9;
-
-    uint64 UptimeNanoseconds = 10;
+    repeated string ServerArgs = 2;
+    bytes ServerStats = 3;
 }
 
 message UpdateServerRequest {

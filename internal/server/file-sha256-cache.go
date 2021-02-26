@@ -36,28 +36,28 @@ func (headerCache *FileSHA256Cache) SetFileSHA256(headerPath string, headerMTime
 }
 
 // GetFilesCount ...
-func (headerCache *FileSHA256Cache) GetFilesCount() uint64 {
+func (headerCache *FileSHA256Cache) GetFilesCount() int64 {
 	headerCache.mu.RLock()
 	elements := len(headerCache.table)
 	headerCache.mu.RUnlock()
-	return uint64(elements)
+	return int64(elements)
 }
 
-// UserCache ...
-type UserCache struct {
+// UserCaches ...
+type UserCaches struct {
 	users map[common.SHA256Struct]*FileSHA256Cache
 	mu    sync.RWMutex
 }
 
 // MakeUserCache ...
-func MakeUserCache() *UserCache {
-	return &UserCache{
+func MakeUserCache() *UserCaches {
+	return &UserCaches{
 		users: make(map[common.SHA256Struct]*FileSHA256Cache, 1024),
 	}
 }
 
 // GetFilesCache ...
-func (userCache *UserCache) GetFilesCache(userID common.SHA256Struct) *FileSHA256Cache {
+func (userCache *UserCaches) GetFilesCache(userID common.SHA256Struct) *FileSHA256Cache {
 	userCache.mu.RLock()
 	headerCache := userCache.users[userID]
 	userCache.mu.RUnlock()
@@ -81,9 +81,9 @@ func (userCache *UserCache) GetFilesCache(userID common.SHA256Struct) *FileSHA25
 }
 
 // GetCachesCount ...
-func (userCache *UserCache) GetCachesCount() uint64 {
+func (userCache *UserCaches) GetCachesCount() int64 {
 	userCache.mu.RLock()
-	clientsCount := len(userCache.users)
+	usersCount := len(userCache.users)
 	userCache.mu.RUnlock()
-	return uint64(clientsCount)
+	return int64(usersCount)
 }

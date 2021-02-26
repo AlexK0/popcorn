@@ -67,3 +67,11 @@ func (s *UserSessions) CloseSession(sessionID uint64) {
 	delete(s.sessions, sessionID)
 	s.mu.Unlock()
 }
+
+// ActiveSessions ...
+func (s *UserSessions) ActiveSessions() int64 {
+	s.mu.RLock()
+	acriveSessions := len(s.sessions)
+	s.mu.RUnlock()
+	return int64(acriveSessions)
+}
