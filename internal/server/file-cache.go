@@ -67,7 +67,8 @@ func MakeFileCache(cacheDir string, cacheLimitBytes int64) (*FileCache, error) {
 
 // CreateLinkFromCache ...
 func (cache *FileCache) CreateLinkFromCache(filePath string, fileSHA256 common.SHA256Struct, destPath string) bool {
-	key := CachedFileKey{filePath, fileSHA256}
+	fileName := path.Base(filePath)
+	key := CachedFileKey{fileName, fileSHA256}
 	cache.mu.Lock()
 	cachedFile := cache.table[key]
 	if cachedFile.lruNode != nil && cachedFile.lruNode != cache.lruHead {
@@ -100,14 +101,15 @@ func (cache *FileCache) CreateLinkFromCache(filePath string, fileSHA256 common.S
 // SaveFileToCache ...
 func (cache *FileCache) SaveFileToCache(srcPath string, filePath string, fileSHA256 common.SHA256Struct, fileSize int64) (bool, error) {
 	uniqueID := atomic.AddUint64(&cache.uniqueCounter, 1) - 1
-	cachedFileName := fmt.Sprintf("%d/%s.%X", uniqueID%dirShards, path.Base(filePath), uniqueID)
+	fileName := path.Base(filePath)
+	cachedFileName := fmt.Sprintf("%d/%s.%X", uniqueID%dirShards, fileName, uniqueID)
 	cachedFilePath := path.Join(cache.cacheDir, cachedFileName)
 
 	if err := os.Link(srcPath, cachedFilePath); err != nil {
 		return false, err
 	}
 
-	key := CachedFileKey{filePath, fileSHA256}
+	key := CachedFileKey{fileName, fileSHA256}
 	newHead := &lruNode{key: key}
 	value := cachedFile{pathInCache: cachedFilePath, fileSize: fileSize, lruNode: newHead}
 	cache.mu.Lock()
