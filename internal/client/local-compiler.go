@@ -53,11 +53,9 @@ func MakeLocalCompiler(compilerArgs []string) *LocalCompiler {
 			} else if strings.HasPrefix(arg, "-o") {
 				compiler.outFile, _ = filepath.Abs(arg[2:])
 				continue
-			} else if strings.HasSuffix(arg, "=native") ||
+			} else if strings.HasSuffix(arg, "=native") || arg == "-I-" ||
 				// TODO think about it
 				strings.HasPrefix(arg, "-idirafter") || strings.HasPrefix(arg, "--sysroot") || strings.HasPrefix(arg, "-isysroot") {
-				remoteCompilationAllowed = false
-			} else if arg == "-I-" {
 				remoteCompilationAllowed = false
 			} else if arg == "-I" {
 				if i+1 < len(compilerArgs) {
@@ -123,7 +121,7 @@ func extractHeaders(rawOut []byte) []string {
 			continue
 		}
 
-		if line == "\\" || line == "#pragma" || isSourceFile(line) || strings.HasSuffix(line, ".o") || strings.HasSuffix(line, ".o:") {
+		if line == "\\" || isSourceFile(line) || strings.HasSuffix(line, ".o") || strings.HasSuffix(line, ".o:") {
 			continue
 		}
 		headers = append(headers, line)

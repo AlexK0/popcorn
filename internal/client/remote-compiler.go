@@ -24,7 +24,7 @@ type RemoteCompiler struct {
 
 // MakeRemoteCompiler ...
 func MakeRemoteCompiler(localCompiler *LocalCompiler, serverHostPort string) (*RemoteCompiler, error) {
-	userID, err := common.MakeUniqueUserId()
+	userID, err := common.MakeUniqueUserID()
 	if err != nil {
 		return nil, err
 	}

@@ -66,8 +66,8 @@ func feedHash(hasher io.Writer, data []byte) {
 	_, _ = hasher.Write([]byte{0, 1, 2, 2, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 5})
 }
 
-// MakeUniqueUserId ...
-func MakeUniqueUserId() (*pb.SHA256Message, error) {
+// MakeUniqueUserID ...
+func MakeUniqueUserID() (*pb.SHA256Message, error) {
 	netInterfaces, err := net.Interfaces()
 	if err != nil {
 		return nil, err
