@@ -24,4 +24,4 @@ all: check client server
 .PHONY : all
 
 clean:
-	rm bin/popcorn-client bin/popcorn-server
+	rm -f bin/popcorn-client bin/popcorn-server
