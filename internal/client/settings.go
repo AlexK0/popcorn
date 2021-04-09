@@ -28,9 +28,13 @@ func ReadClientSettings() *Settings {
 	}
 	for _, envVar := range os.Environ() {
 		if value := getEnvValue(envVar, "POPCORN_SERVERS="); len(value) != 0 {
-			settings.Servers = strings.Split(value, ";")
-			for i, host := range settings.Servers {
-				settings.Servers[i] = strings.TrimSpace(host)
+			hosts := strings.Split(value, ";")
+			settings.Servers = make([]string, len(hosts))
+			for _, host := range hosts {
+				trimmedHost := strings.TrimSpace(host)
+				if len(trimmedHost) != 0 {
+					settings.Servers = append(settings.Servers, trimmedHost)
+				}
 			}
 		} else if value := getEnvValue(envVar, "POPCORN_LOG_FILENAME="); len(value) != 0 {
 			settings.LogFileName = value
