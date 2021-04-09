@@ -29,7 +29,7 @@ func ReadClientSettings() *Settings {
 	for _, envVar := range os.Environ() {
 		if value := getEnvValue(envVar, "POPCORN_SERVERS="); len(value) != 0 {
 			hosts := strings.Split(value, ";")
-			settings.Servers = make([]string, len(hosts))
+			settings.Servers = make([]string, 0, len(hosts))
 			for _, host := range hosts {
 				trimmedHost := strings.TrimSpace(host)
 				if len(trimmedHost) != 0 {
