@@ -33,7 +33,7 @@ func main() {
 	}
 
 	if *checkServers {
-		client.CheckServers(settings)
+		client.CheckServers(settings, false)
 		os.Exit(0)
 	}
 

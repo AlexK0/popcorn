@@ -32,7 +32,7 @@ func checkServer(serverHostPort string, statusChannel chan<- checkServerRes) {
 }
 
 // CheckServers ...
-func CheckServers(settings *Settings) {
+func CheckServers(settings *Settings, showStats bool) {
 	statusChannel := make(chan checkServerRes)
 
 	for _, serverHostPort := range settings.Servers {
@@ -50,9 +50,11 @@ func CheckServers(settings *Settings) {
 			fmt.Println("  Server version:", res.serverStatus.ServerVersion)
 			fmt.Println("  Server args:", res.serverStatus.ServerArgs)
 			fmt.Println("  Proceesing time:", res.processingTime)
-			fmt.Println("  Server stats:")
-			statsWithIndent := "    " + strings.TrimSpace(strings.ReplaceAll(string(res.serverStatus.ServerStats), "|g\n", "\n    "))
-			fmt.Println(strings.ReplaceAll(statsWithIndent, ":", ": "))
+			if showStats {
+				fmt.Println("  Server stats:")
+				statsWithIndent := "    " + strings.TrimSpace(strings.ReplaceAll(string(res.serverStatus.ServerStats), "|g\n", "\n    "))
+				fmt.Println(strings.ReplaceAll(statsWithIndent, ":", ": "))
+			}
 		}
 	}
 }
