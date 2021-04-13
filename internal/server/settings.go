@@ -2,9 +2,8 @@ package server
 
 // Settings ...
 type Settings struct {
-	Port     int
-	Host     string
-	Password string
+	Port int
+	Host string
 
 	WorkingDir  string
 	LogFileName string

@@ -6,7 +6,6 @@ import (
 	"net"
 	"os"
 	"path"
-	"syscall"
 	"time"
 
 	"github.com/AlexK0/popcorn/internal/common"
@@ -42,7 +41,6 @@ func main() {
 	version := flag.Bool("version", false, "Show version and exit.")
 	flag.StringVar(&settings.Host, "host", "0.0.0.0", "Binding address.")
 	flag.IntVar(&settings.Port, "port", 43210, "Listening port.")
-	flag.StringVar(&settings.Password, "password", "", "Secret password for remote control.")
 	flag.StringVar(&settings.WorkingDir, "working-dir", "/tmp/popcorn-server", "Directory for saving and compiling incoming files.")
 	flag.StringVar(&settings.LogFileName, "log-filename", "", "Logger file.")
 	flag.StringVar(&settings.LogSeverity, "log-severity", common.WarningSeverity, "Logger severity level.")
@@ -83,11 +81,10 @@ func main() {
 
 	grpcServer := grpc.NewServer(grpc.MaxRecvMsgSize(1024*1204*1024), grpc.MaxSendMsgSize(1024*1204*1024))
 	compilationServer := &server.CompilationServer{
-		StartTime:             time.Now(),
-		SessionsDir:           path.Join(settings.WorkingDir, "sessions"),
-		WorkingDir:            settings.WorkingDir,
-		GRPCServer:            grpcServer,
-		RemoteControlPassword: settings.Password,
+		StartTime:   time.Now(),
+		SessionsDir: path.Join(settings.WorkingDir, "sessions"),
+		WorkingDir:  settings.WorkingDir,
+		GRPCServer:  grpcServer,
 
 		UserCaches:       server.MakeUserCache(),
 		UploadingHeaders: server.MakeProcessingHeaders(),
@@ -111,10 +108,4 @@ func main() {
 	grpcServer.Stop()
 	serverStats.Close()
 	lis.Close()
-
-	if len(compilationServer.NewPopcornServerBinaryPath) != 0 {
-		if _, err := syscall.ForkExec(compilationServer.NewPopcornServerBinaryPath, os.Args, nil); err != nil {
-			common.LogError("Can't restart server:", err)
-		}
-	}
 }

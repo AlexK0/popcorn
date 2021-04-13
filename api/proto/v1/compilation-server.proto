@@ -15,9 +15,6 @@ service CompilationService {
 
     // Service api
     rpc Status(StatusRequest) returns (StatusReply) {}
-    rpc UpdateServer(UpdateServerRequest) returns (UpdateServerReply) {}
-    rpc RestartServer(RestartServerRequest) returns (RestartServerReply) {}
-    rpc DumpServerLog(DumpServerLogRequest) returns (DumpServerLogReply) {}
 }
 
 message SHA256Message {
@@ -91,28 +88,4 @@ message StatusReply {
     string ServerVersion = 1;
     repeated string ServerArgs = 2;
     bytes ServerStats = 3;
-}
-
-message UpdateServerRequest {
-    bytes NewBinary = 1;
-    string Password = 2;
-}
-
-message UpdateServerReply {
-}
-
-message RestartServerRequest {
-    string Password = 1;
-}
-
-message RestartServerReply {
-}
-
-message DumpServerLogRequest {
-    string Password = 1;
-    uint64 BytesLimit = 2;
-}
-
-message DumpServerLogReply {
-    bytes LogData = 1;
 }

@@ -15,10 +15,6 @@ func main() {
 
 	version := flag.Bool("version", false, "Show version and exit.")
 	checkServers := flag.Bool("check-servers", false, "Check servers status.")
-	restartServer := flag.Bool("restart-servers", false, "Restart remote servers.")
-	updateServerNewBinaryPath := flag.String("update-servers", "", "Update remote servers.")
-	logsDir := flag.String("copy-logs", "", "Copy logs from remote servers.")
-	password := flag.String("password", "", "Password for managing remote servers.")
 
 	flag.Parse()
 
@@ -34,21 +30,6 @@ func main() {
 
 	if *checkServers {
 		client.CheckServers(settings, false)
-		os.Exit(0)
-	}
-
-	if len(*updateServerNewBinaryPath) != 0 {
-		client.UpdateServers(settings, *updateServerNewBinaryPath, *password)
-		os.Exit(0)
-	}
-
-	if *restartServer {
-		client.RestartServers(settings, *password)
-		os.Exit(0)
-	}
-
-	if len(*logsDir) != 0 {
-		client.CopyLogsFromServers(settings, *logsDir, *password)
 		os.Exit(0)
 	}
 
