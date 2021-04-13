@@ -4,12 +4,19 @@ import (
 	"errors"
 	"io/ioutil"
 	"os"
+	"sync"
 
 	"google.golang.org/grpc/grpclog"
 )
 
+type fileLogWriter struct {
+	logFile string
+	mu      sync.RWMutex
+	file    *os.File
+}
+
 var (
-	logFileName = ""
+	logWriter = fileLogWriter{}
 
 	logComponent = grpclog.Component("unknown")
 	// ErrUnknownSeverity ...
@@ -27,39 +34,63 @@ func init() {
 	_ = LoggerInit("unknown", "", InfoSeverity)
 }
 
-func getLogFile(logFile string) (*os.File, error) {
-	if len(logFile) == 0 {
-		return os.Stdout, nil
+func (writer *fileLogWriter) Write(p []byte) (int, error) {
+	writer.mu.RLock()
+	n, err := writer.file.Write(p)
+	writer.mu.RUnlock()
+	return n, err
+}
+
+func (writer *fileLogWriter) reopenLog(newLogFile string) error {
+	var err error = nil
+	new_file := os.Stdout
+	if len(newLogFile) != 0 {
+		new_file, err = os.OpenFile(newLogFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
+		if err != nil {
+			return err
+		}
 	}
-	return os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
+
+	writer.mu.Lock()
+	if len(writer.logFile) != 0 {
+		err = writer.file.Close()
+	}
+	writer.logFile = newLogFile
+	writer.file = new_file
+	writer.mu.Unlock()
+	return err
 }
 
 // LoggerInit ...
 func LoggerInit(component string, logFile string, severity string) error {
-	file, err := getLogFile(logFile)
+	err := logWriter.reopenLog(logFile)
 	if err != nil {
 		return err
 	}
 
 	switch severity {
 	case InfoSeverity:
-		grpclog.SetLoggerV2(grpclog.NewLoggerV2WithVerbosity(file, ioutil.Discard, ioutil.Discard, 2))
+		grpclog.SetLoggerV2(grpclog.NewLoggerV2WithVerbosity(&logWriter, ioutil.Discard, ioutil.Discard, 2))
 	case WarningSeverity:
-		grpclog.SetLoggerV2(grpclog.NewLoggerV2WithVerbosity(ioutil.Discard, file, ioutil.Discard, 2))
+		grpclog.SetLoggerV2(grpclog.NewLoggerV2WithVerbosity(ioutil.Discard, &logWriter, ioutil.Discard, 2))
 	case ErrorSeverity:
-		grpclog.SetLoggerV2(grpclog.NewLoggerV2WithVerbosity(ioutil.Discard, ioutil.Discard, file, 2))
+		grpclog.SetLoggerV2(grpclog.NewLoggerV2WithVerbosity(ioutil.Discard, ioutil.Discard, &logWriter, 2))
 	default:
 		return ErrUnknownSeverity
 	}
 
-	logFileName = logFile
 	logComponent = grpclog.Component(component)
 	return nil
 }
 
+// RotateLogFile
+func RotateLogFile() error {
+	return logWriter.reopenLog(logWriter.logFile)
+}
+
 // GetLogFileName ...
 func GetLogFileName() string {
-	return logFileName
+	return logWriter.logFile
 }
 
 // LogInfo ...
