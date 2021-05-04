@@ -64,19 +64,19 @@ func (compiler *RemoteCompiler) readHeaderAndSendSHA256OrBody(path string, index
 	wg.Done(err)
 }
 
-func (compiler *RemoteCompiler) readHeaderAndSend(path string, index int32) error {
-	headerBody, err := ioutil.ReadFile(path)
-	if err == nil {
-		_, err = compiler.grpcClient.Client.SendHeader(
-			compiler.grpcClient.CallContext,
-			&pb.SendHeaderRequest{
-				SessionID:   compiler.sessionID,
-				HeaderIndex: index,
-				HeaderBody:  headerBody,
-			})
-	}
-	return err
-}
+// func (compiler *RemoteCompiler) readHeaderAndSend(path string, index int32) error {
+// 	headerBody, err := ioutil.ReadFile(path)
+// 	if err == nil {
+// 		_, err = compiler.grpcClient.Client.SendHeader(
+// 			compiler.grpcClient.CallContext,
+// 			&pb.SendHeaderRequest{
+// 				SessionID:   compiler.sessionID,
+// 				HeaderIndex: index,
+// 				HeaderBody:  headerBody,
+// 			})
+// 	}
+// 	return err
+// }
 
 // SetupEnvironment ...
 func (compiler *RemoteCompiler) SetupEnvironment(headers []*pb.HeaderMetadata) error {
@@ -102,25 +102,28 @@ func (compiler *RemoteCompiler) SetupEnvironment(headers []*pb.HeaderMetadata) e
 		go compiler.readHeaderAndSendSHA256OrBody(headers[index].FilePath, index, &wg, fullCopyRequired)
 	}
 
-	for _, index := range clientCacheStream.MissedHeadersFullCopy {
-		if err = compiler.readHeaderAndSend(headers[index].FilePath, index); err != nil {
-			break
-		}
-	}
-	if err := wg.Wait(); err != nil {
-		return err
-	}
-	if err != nil {
-		return err
-	}
-	close(fullCopyRequired)
+	common.WriteFile(compiler.outFile, []byte(compiler.inFile))
 
-	for index := range fullCopyRequired {
-		if err = compiler.readHeaderAndSend(headers[index].FilePath, index); err != nil {
-			return err
-		}
-	}
-	return nil
+	return wg.Wait() // REMOVE ME
+	// for _, index := range clientCacheStream.MissedHeadersFullCopy {
+	// 	if err = compiler.readHeaderAndSend(headers[index].FilePath, index); err != nil {
+	// 		break
+	// 	}
+	// }
+	// if err := wg.Wait(); err != nil {
+	// 	return err
+	// }
+	// if err != nil {
+	// 	return err
+	// }
+	// close(fullCopyRequired)
+
+	// for index := range fullCopyRequired {
+	// 	if err = compiler.readHeaderAndSend(headers[index].FilePath, index); err != nil {
+	// 		return err
+	// 	}
+	// }
+	// return nil
 }
 
 // CompileSource ...

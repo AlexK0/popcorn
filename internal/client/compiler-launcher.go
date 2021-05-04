@@ -67,7 +67,9 @@ func tryRemoteCompilation(localCompiler *LocalCompiler, settings *Settings) (ret
 		return 0, nil, nil, err
 	}
 
-	return remoteCompiler.CompileSource()
+	remoteCompiler.Clear()
+	return 0, nil, nil, nil
+	//return remoteCompiler.CompileSource()
 }
 
 // PerformCompilation ...
