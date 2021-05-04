@@ -12,7 +12,14 @@ import (
 
 func main() {
 	runtime.GOMAXPROCS(2)
-
+	// file, err := os.OpenFile(bucketFile, os.O_RDWR|os.O_CREATE, 0666)
+	// if err != nil {
+	// 	return fmt.Errorf("Can't open bucket file %q: %v", bucketFile, err)
+	// }
+	// if err := syscall.FcntlFlock(file.Fd(), syscall.F_SETLKW, &syscall.Flock_t{Type: syscall.F_WRLCK}); err != nil {
+	// 	file.Close()
+	// 	return fmt.Errorf("Can't lock bucket file %q for reading: %v", bucketFile, err)
+	// }
 	version := flag.Bool("version", false, "Show version and exit.")
 	checkServers := flag.Bool("check-servers", false, "Check servers status.")
 
