@@ -1,7 +1,6 @@
 package client
 
 import (
-	"crypto/sha256"
 	"io/ioutil"
 
 	pb "github.com/AlexK0/popcorn/internal/api/proto/v1"
@@ -45,8 +44,8 @@ func MakeRemoteCompiler(localCompiler *LocalCompiler, serverHostPort string) (*R
 	}, nil
 }
 
-func (compiler *RemoteCompiler) readHeaderAndSendSHA256OrBody(path string, index int32, wg *common.WaitGroupWithError) {
-	headerBody, err := ioutil.ReadFile(path)
+func (compiler *RemoteCompiler) readHeaderAndSendSHA256OrBody(path string, index int32, wg *common.WaitGroupWithError, fullRequired chan<- int32) {
+	headerSha256, err := common.GetFileSHA256(path)
 	if err != nil {
 		wg.Done(err)
 		return
@@ -56,21 +55,16 @@ func (compiler *RemoteCompiler) readHeaderAndSendSHA256OrBody(path string, index
 		&pb.SendHeaderSHA256Request{
 			SessionID:    compiler.sessionID,
 			HeaderIndex:  index,
-			HeaderSHA256: common.SHA256StructToSHA256Message(common.MakeSHA256StructFromArray(sha256.Sum256(headerBody))),
+			HeaderSHA256: common.SHA256StructToSHA256Message(headerSha256),
 		})
+
 	if err == nil && reply.FullCopyRequired {
-		_, err = compiler.grpcClient.Client.SendHeader(
-			compiler.grpcClient.CallContext,
-			&pb.SendHeaderRequest{
-				SessionID:   compiler.sessionID,
-				HeaderIndex: index,
-				HeaderBody:  headerBody,
-			})
+		fullRequired <- index
 	}
 	wg.Done(err)
 }
 
-func (compiler *RemoteCompiler) readHeaderAndSend(path string, index int32, wg *common.WaitGroupWithError) {
+func (compiler *RemoteCompiler) readHeaderAndSend(path string, index int32) error {
 	headerBody, err := ioutil.ReadFile(path)
 	if err == nil {
 		_, err = compiler.grpcClient.Client.SendHeader(
@@ -81,7 +75,7 @@ func (compiler *RemoteCompiler) readHeaderAndSend(path string, index int32, wg *
 				HeaderBody:  headerBody,
 			})
 	}
-	wg.Done(err)
+	return err
 }
 
 // SetupEnvironment ...
@@ -102,14 +96,31 @@ func (compiler *RemoteCompiler) SetupEnvironment(headers []*pb.HeaderMetadata) e
 	compiler.needCloseSession = true
 
 	wg := common.WaitGroupWithError{}
-	wg.Add(len(clientCacheStream.MissedHeadersSHA256) + len(clientCacheStream.MissedHeadersFullCopy))
-	for _, index := range clientCacheStream.MissedHeadersFullCopy {
-		go compiler.readHeaderAndSend(headers[index].FilePath, index, &wg)
-	}
+	wg.Add(len(clientCacheStream.MissedHeadersSHA256))
+	fullCopyRequired := make(chan int32, len(clientCacheStream.MissedHeadersSHA256))
 	for _, index := range clientCacheStream.MissedHeadersSHA256 {
-		go compiler.readHeaderAndSendSHA256OrBody(headers[index].FilePath, index, &wg)
+		go compiler.readHeaderAndSendSHA256OrBody(headers[index].FilePath, index, &wg, fullCopyRequired)
 	}
-	return wg.Wait()
+
+	for _, index := range clientCacheStream.MissedHeadersFullCopy {
+		if err = compiler.readHeaderAndSend(headers[index].FilePath, index); err != nil {
+			break
+		}
+	}
+	if err := wg.Wait(); err != nil {
+		return err
+	}
+	if err != nil {
+		return err
+	}
+	close(fullCopyRequired)
+
+	for index := range fullCopyRequired {
+		if err = compiler.readHeaderAndSend(headers[index].FilePath, index); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // CompileSource ...

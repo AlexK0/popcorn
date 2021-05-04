@@ -113,8 +113,8 @@ func (cache *FileCache) SaveFileToCache(srcPath string, filePath string, fileSHA
 	newHead := &lruNode{key: key}
 	value := cachedFile{pathInCache: cachedFilePath, fileSize: fileSize, lruNode: newHead}
 	cache.mu.Lock()
-	_, exist := cache.table[key]
-	if !exist {
+	_, exists := cache.table[key]
+	if !exists {
 		atomic.AddInt64(&cache.totalSizeOnDisk, fileSize)
 		cache.table[key] = value
 		newHead.next = cache.lruHead
@@ -128,12 +128,12 @@ func (cache *FileCache) SaveFileToCache(srcPath string, filePath string, fileSHA
 	}
 	cache.mu.Unlock()
 
-	if exist {
+	if exists {
 		_ = os.Remove(cachedFilePath)
 	}
 
 	cache.purgeLastElementsTillLimit(cache.hardLimit)
-	return !exist, nil
+	return !exists, nil
 }
 
 // PurgeLastElementsIfRequired ...
@@ -160,7 +160,6 @@ func (cache *FileCache) GetPurgedFiles() int64 {
 }
 
 func (cache *FileCache) purgeLastElementsTillLimit(cacheLimit int64) {
-
 	for atomic.LoadInt64(&cache.totalSizeOnDisk) > cacheLimit {
 		var removingFile cachedFile
 		cache.mu.Lock()
