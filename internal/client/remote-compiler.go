@@ -90,6 +90,7 @@ func (compiler *RemoteCompiler) SetupEnvironment(headers []*pb.HeaderMetadata) e
 	if err != nil {
 		return err
 	}
+
 	compiler.sessionID = clientCacheStream.SessionID
 	compiler.needCloseSession = true
 
