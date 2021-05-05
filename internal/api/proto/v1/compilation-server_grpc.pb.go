@@ -21,7 +21,7 @@ type CompilationServiceClient interface {
 	// Compilation api
 	StartCompilationSession(ctx context.Context, in *StartCompilationSessionRequest, opts ...grpc.CallOption) (*StartCompilationSessionReply, error)
 	SendHeaderSHA256(ctx context.Context, in *SendHeaderSHA256Request, opts ...grpc.CallOption) (*SendHeaderSHA256Reply, error)
-	SendHeader(ctx context.Context, in *SendHeaderRequest, opts ...grpc.CallOption) (*SendHeaderReply, error)
+	SendHeader(ctx context.Context, opts ...grpc.CallOption) (CompilationService_SendHeaderClient, error)
 	CompileSource(ctx context.Context, in *CompileSourceRequest, opts ...grpc.CallOption) (*CompileSourceReply, error)
 	CloseSession(ctx context.Context, in *CloseSessionRequest, opts ...grpc.CallOption) (*CloseSessionReply, error)
 	// Service api
@@ -54,13 +54,38 @@ func (c *compilationServiceClient) SendHeaderSHA256(ctx context.Context, in *Sen
 	return out, nil
 }
 
-func (c *compilationServiceClient) SendHeader(ctx context.Context, in *SendHeaderRequest, opts ...grpc.CallOption) (*SendHeaderReply, error) {
-	out := new(SendHeaderReply)
-	err := c.cc.Invoke(ctx, "/popcorn.CompilationService/SendHeader", in, out, opts...)
+func (c *compilationServiceClient) SendHeader(ctx context.Context, opts ...grpc.CallOption) (CompilationService_SendHeaderClient, error) {
+	stream, err := c.cc.NewStream(ctx, &CompilationService_ServiceDesc.Streams[0], "/popcorn.CompilationService/SendHeader", opts...)
 	if err != nil {
 		return nil, err
 	}
-	return out, nil
+	x := &compilationServiceSendHeaderClient{stream}
+	return x, nil
+}
+
+type CompilationService_SendHeaderClient interface {
+	Send(*SendHeaderRequest) error
+	CloseAndRecv() (*SendHeaderReply, error)
+	grpc.ClientStream
+}
+
+type compilationServiceSendHeaderClient struct {
+	grpc.ClientStream
+}
+
+func (x *compilationServiceSendHeaderClient) Send(m *SendHeaderRequest) error {
+	return x.ClientStream.SendMsg(m)
+}
+
+func (x *compilationServiceSendHeaderClient) CloseAndRecv() (*SendHeaderReply, error) {
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	m := new(SendHeaderReply)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
 }
 
 func (c *compilationServiceClient) CompileSource(ctx context.Context, in *CompileSourceRequest, opts ...grpc.CallOption) (*CompileSourceReply, error) {
@@ -97,7 +122,7 @@ type CompilationServiceServer interface {
 	// Compilation api
 	StartCompilationSession(context.Context, *StartCompilationSessionRequest) (*StartCompilationSessionReply, error)
 	SendHeaderSHA256(context.Context, *SendHeaderSHA256Request) (*SendHeaderSHA256Reply, error)
-	SendHeader(context.Context, *SendHeaderRequest) (*SendHeaderReply, error)
+	SendHeader(CompilationService_SendHeaderServer) error
 	CompileSource(context.Context, *CompileSourceRequest) (*CompileSourceReply, error)
 	CloseSession(context.Context, *CloseSessionRequest) (*CloseSessionReply, error)
 	// Service api
@@ -115,8 +140,8 @@ func (UnimplementedCompilationServiceServer) StartCompilationSession(context.Con
 func (UnimplementedCompilationServiceServer) SendHeaderSHA256(context.Context, *SendHeaderSHA256Request) (*SendHeaderSHA256Reply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SendHeaderSHA256 not implemented")
 }
-func (UnimplementedCompilationServiceServer) SendHeader(context.Context, *SendHeaderRequest) (*SendHeaderReply, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method SendHeader not implemented")
+func (UnimplementedCompilationServiceServer) SendHeader(CompilationService_SendHeaderServer) error {
+	return status.Errorf(codes.Unimplemented, "method SendHeader not implemented")
 }
 func (UnimplementedCompilationServiceServer) CompileSource(context.Context, *CompileSourceRequest) (*CompileSourceReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CompileSource not implemented")
@@ -176,22 +201,30 @@ func _CompilationService_SendHeaderSHA256_Handler(srv interface{}, ctx context.C
 	return interceptor(ctx, in, info, handler)
 }
 
-func _CompilationService_SendHeader_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SendHeaderRequest)
-	if err := dec(in); err != nil {
+func _CompilationService_SendHeader_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(CompilationServiceServer).SendHeader(&compilationServiceSendHeaderServer{stream})
+}
+
+type CompilationService_SendHeaderServer interface {
+	SendAndClose(*SendHeaderReply) error
+	Recv() (*SendHeaderRequest, error)
+	grpc.ServerStream
+}
+
+type compilationServiceSendHeaderServer struct {
+	grpc.ServerStream
+}
+
+func (x *compilationServiceSendHeaderServer) SendAndClose(m *SendHeaderReply) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func (x *compilationServiceSendHeaderServer) Recv() (*SendHeaderRequest, error) {
+	m := new(SendHeaderRequest)
+	if err := x.ServerStream.RecvMsg(m); err != nil {
 		return nil, err
 	}
-	if interceptor == nil {
-		return srv.(CompilationServiceServer).SendHeader(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/popcorn.CompilationService/SendHeader",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(CompilationServiceServer).SendHeader(ctx, req.(*SendHeaderRequest))
-	}
-	return interceptor(ctx, in, info, handler)
+	return m, nil
 }
 
 func _CompilationService_CompileSource_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -264,10 +297,6 @@ var CompilationService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _CompilationService_SendHeaderSHA256_Handler,
 		},
 		{
-			MethodName: "SendHeader",
-			Handler:    _CompilationService_SendHeader_Handler,
-		},
-		{
 			MethodName: "CompileSource",
 			Handler:    _CompilationService_CompileSource_Handler,
 		},
@@ -280,6 +309,12 @@ var CompilationService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _CompilationService_Status_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "SendHeader",
+			Handler:       _CompilationService_SendHeader_Handler,
+			ClientStreams: true,
+		},
+	},
 	Metadata: "api/proto/v1/compilation-server.proto",
 }

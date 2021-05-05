@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -130,34 +131,84 @@ func (s *CompilationServer) SendHeaderSHA256(ctx context.Context, in *pb.SendHea
 	return &pb.SendHeaderSHA256Reply{FullCopyRequired: true}, nil
 }
 
+func saveFileFromStream(file *os.File, stream pb.CompilationService_SendHeaderServer) (int64, error) {
+	headerFileSize := int64(0)
+	for {
+		request, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return 0, fmt.Errorf("Unexpected error on receiving header chunk: %v", err)
+		}
+		headerChunk := request.GetHeaderBodyChunk()
+		if headerChunk == nil {
+			return 0, fmt.Errorf("Header body chunk is expected")
+		}
+		if _, err = file.Write(headerChunk); err != nil {
+			return 0, fmt.Errorf("Can't write header chunk: %v", err)
+		}
+		headerFileSize += int64(len(headerChunk))
+	}
+	return headerFileSize, nil
+}
+
 // SendHeader ...
-func (s *CompilationServer) SendHeader(ctx context.Context, in *pb.SendHeaderRequest) (*pb.SendHeaderReply, error) {
+func (s *CompilationServer) SendHeader(stream pb.CompilationService_SendHeaderServer) error {
 	callObserver := s.Stats.SendHeader.StartRPCCall()
 
-	session := s.Sessions.GetSession(in.SessionID)
-	if session == nil {
+	request, err := stream.Recv()
+	if err != nil {
 		callObserver.FinishWithError()
-		return nil, fmt.Errorf("Unknown SessionID %d", in.SessionID)
+		return fmt.Errorf("Unexpected error: %v", err)
 	}
 
-	headerMetadata := &session.RequiredHeaders[in.HeaderIndex]
+	defer stream.SendAndClose(&pb.SendHeaderReply{})
+	metadata := request.GetMetadata()
+	if metadata == nil {
+		callObserver.FinishWithError()
+		return fmt.Errorf("Metadata af first chunk is expected")
+	}
+
+	session := s.Sessions.GetSession(metadata.SessionID)
+	if session == nil {
+		callObserver.FinishWithError()
+		return fmt.Errorf("Unknown SessionID %d", metadata.SessionID)
+	}
+
+	headerMetadata := &session.RequiredHeaders[metadata.HeaderIndex]
 	defer s.UploadingHeaders.FinishHeaderSending(headerMetadata.FilePath, headerMetadata.SHA256Struct)
 	headerPathInWorkingDir := path.Join(session.WorkingDir, headerMetadata.FilePath)
 	if s.HeaderFileCache.CreateLinkFromCache(headerMetadata.FilePath, headerMetadata.SHA256Struct, headerPathInWorkingDir) {
 		s.Stats.SendingHeadersDoubleReceived.Increment()
 		callObserver.Finish()
-		return &pb.SendHeaderReply{}, nil
+		return nil
 	}
 
-	if err := common.WriteFile(headerPathInWorkingDir, in.HeaderBody); err != nil {
+	headerFileTmp, err := common.OpenTempFile(headerPathInWorkingDir)
+	if err != nil {
 		callObserver.FinishWithError()
-		return nil, fmt.Errorf("Can't save header: %v", err)
+		return fmt.Errorf("Can't open temp file for saving header: %v", err)
+	}
+
+	headerFileSize, err := saveFileFromStream(headerFileTmp, stream)
+	headerFileTmp.Close()
+	if err != nil {
+		os.Remove(headerFileTmp.Name())
+		callObserver.FinishWithError()
+		return err
+	}
+
+	if err = os.Rename(headerFileTmp.Name(), headerPathInWorkingDir); err != nil {
+		os.Remove(headerFileTmp.Name())
+		callObserver.FinishWithError()
+		return fmt.Errorf("Can't rename header temp file: %v", err)
 	}
 
 	s.Stats.SendingHeadersReceived.Increment()
-	_, _ = s.HeaderFileCache.SaveFileToCache(headerPathInWorkingDir, headerMetadata.FilePath, headerMetadata.SHA256Struct, int64(len(in.HeaderBody)))
+	_, _ = s.HeaderFileCache.SaveFileToCache(headerPathInWorkingDir, headerMetadata.FilePath, headerMetadata.SHA256Struct, headerFileSize)
 	callObserver.Finish()
-	return &pb.SendHeaderReply{}, nil
+	return nil
 }
 
 func (s *CompilationServer) closeSession(session *UserSession, sessionID uint64, close bool) {

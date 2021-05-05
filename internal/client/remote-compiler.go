@@ -1,7 +1,10 @@
 package client
 
 import (
+	"fmt"
+	"io"
 	"io/ioutil"
+	"os"
 
 	pb "github.com/AlexK0/popcorn/internal/api/proto/v1"
 	"github.com/AlexK0/popcorn/internal/common"
@@ -66,17 +69,52 @@ func (compiler *RemoteCompiler) readHeaderSHA256AndSend(path string, mtime int64
 }
 
 func (compiler *RemoteCompiler) readHeaderAndSend(path string, index int32) error {
-	headerBody, err := ioutil.ReadFile(path)
-	if err == nil {
-		_, err = compiler.grpcClient.Client.SendHeader(
-			compiler.grpcClient.CallContext,
-			&pb.SendHeaderRequest{
+	file, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("Can't open header %q for sending: %v", path, err)
+	}
+	defer file.Close()
+
+	stream, err := compiler.grpcClient.Client.SendHeader(compiler.grpcClient.CallContext)
+	if err != nil {
+		return fmt.Errorf("Can't open grpc stream: %v", err)
+	}
+
+	err = stream.Send(&pb.SendHeaderRequest{
+		Chunk: &pb.SendHeaderRequest_Metadata{
+			Metadata: &pb.SendHeaderRequest_HeaderMetadata{
 				SessionID:   compiler.sessionID,
 				HeaderIndex: index,
-				HeaderBody:  headerBody,
-			})
+			},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("Can't send header metadata: %v", err)
 	}
-	return err
+
+	var buffer [256 * 1024]byte
+	for {
+		n, err := file.Read(buffer[:])
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("Can't read header %q: %v", path, err)
+		}
+		err = stream.Send(&pb.SendHeaderRequest{
+			Chunk: &pb.SendHeaderRequest_HeaderBodyChunk{
+				HeaderBodyChunk: buffer[:n],
+			},
+		})
+		if err == io.EOF {
+			break
+		}
+	}
+
+	if _, err = stream.CloseAndRecv(); err != nil {
+		return fmt.Errorf("Can't send header: %v", err)
+	}
+	return nil
 }
 
 // SetupEnvironment ...

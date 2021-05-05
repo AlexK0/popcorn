@@ -6,14 +6,17 @@ import (
 	"path/filepath"
 )
 
-// WriteFile ...
-func WriteFile(fullPath string, fileContent []byte) error {
+func OpenTempFile(fullPath string) (f *os.File, err error) {
 	directory, fileName := filepath.Split(fullPath)
 	if err := os.MkdirAll(directory, os.ModePerm); err != nil {
-		return err
+		return nil, err
 	}
+	return ioutil.TempFile(directory, fileName)
+}
 
-	tmpFile, err := ioutil.TempFile(directory, fileName)
+// WriteFile ...
+func WriteFile(fullPath string, fileContent []byte) error {
+	tmpFile, err := OpenTempFile(fullPath)
 	if err != nil {
 		return err
 	}

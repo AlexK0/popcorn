@@ -9,7 +9,7 @@ service CompilationService {
     // Compilation api
     rpc StartCompilationSession(StartCompilationSessionRequest) returns (StartCompilationSessionReply) {}
     rpc SendHeaderSHA256(SendHeaderSHA256Request) returns (SendHeaderSHA256Reply) {}
-    rpc SendHeader(SendHeaderRequest) returns (SendHeaderReply) {}
+    rpc SendHeader(stream SendHeaderRequest) returns (SendHeaderReply) {}
     rpc CompileSource (CompileSourceRequest) returns (CompileSourceReply) {}
     rpc CloseSession(CloseSessionRequest) returns (CloseSessionReply) {}
 
@@ -54,9 +54,14 @@ message SendHeaderSHA256Reply {
 }
 
 message SendHeaderRequest {
-    uint64 SessionID = 1;
-    int32 HeaderIndex = 2;
-    bytes HeaderBody = 3;
+    message HeaderMetadata {
+        uint64 SessionID = 1;
+        int32 HeaderIndex = 2;
+    }
+    oneof Chunk {
+        HeaderMetadata Metadata = 1;
+        bytes HeaderBodyChunk = 2;
+    }
 }
 
 message SendHeaderReply {
