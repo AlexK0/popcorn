@@ -25,11 +25,11 @@ type UserSession struct {
 
 	RequiredHeaders []RequiredHeaderMetadata
 
-	FileSHA256Cache *FileSHA256Cache
+	UserInfo *User
 }
 
-// UserSessions ...
-type UserSessions struct {
+// Sessions ...
+type Sessions struct {
 	sessions map[uint64]*UserSession
 
 	sessionsCounter uint64
@@ -37,14 +37,14 @@ type UserSessions struct {
 }
 
 // MakeUserSessions ...
-func MakeUserSessions() *UserSessions {
-	return &UserSessions{
+func MakeUserSessions() *Sessions {
+	return &Sessions{
 		sessions: make(map[uint64]*UserSession, 512),
 	}
 }
 
 // OpenNewSession ...
-func (s *UserSessions) OpenNewSession(newSession *UserSession) uint64 {
+func (s *Sessions) OpenNewSession(newSession *UserSession) uint64 {
 	s.mu.Lock()
 	sessionID := s.sessionsCounter
 	s.sessionsCounter++
@@ -54,7 +54,7 @@ func (s *UserSessions) OpenNewSession(newSession *UserSession) uint64 {
 }
 
 // GetSession ...
-func (s *UserSessions) GetSession(sessionID uint64) *UserSession {
+func (s *Sessions) GetSession(sessionID uint64) *UserSession {
 	s.mu.RLock()
 	session := s.sessions[sessionID]
 	s.mu.RUnlock()
@@ -62,14 +62,14 @@ func (s *UserSessions) GetSession(sessionID uint64) *UserSession {
 }
 
 // CloseSession ...
-func (s *UserSessions) CloseSession(sessionID uint64) {
+func (s *Sessions) CloseSession(sessionID uint64) {
 	s.mu.Lock()
 	delete(s.sessions, sessionID)
 	s.mu.Unlock()
 }
 
 // ActiveSessions ...
-func (s *UserSessions) ActiveSessions() int64 {
+func (s *Sessions) ActiveSessions() int64 {
 	s.mu.RLock()
 	acriveSessions := len(s.sessions)
 	s.mu.RUnlock()

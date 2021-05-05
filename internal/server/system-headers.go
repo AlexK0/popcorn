@@ -44,5 +44,5 @@ func (systemHeaderCache *SystemHeaderCache) GetSystemHeaderSHA256(headerPath str
 
 // GetSystemHeadersCount ...
 func (systemHeaderCache *SystemHeaderCache) GetSystemHeadersCount() int64 {
-	return systemHeaderCache.systemHeaders.GetFilesCount()
+	return systemHeaderCache.systemHeaders.Count()
 }

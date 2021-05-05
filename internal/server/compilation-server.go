@@ -28,12 +28,12 @@ type CompilationServer struct {
 
 	GRPCServer *grpc.Server
 
-	UserCaches       *UserCaches
+	Users            *Users
 	UploadingHeaders *SendingHeaders
 	SystemHeaders    *SystemHeaderCache
 	HeaderFileCache  *FileCache
 
-	Sessions *UserSessions
+	UserSessions *Sessions
 
 	Stats *CompilationServerStats
 }
@@ -49,14 +49,14 @@ func (s *CompilationServer) StartCompilationSession(ctx context.Context, in *pb.
 		CompilerArgs:    in.CompilerArgs,
 		RequiredHeaders: make([]RequiredHeaderMetadata, 0, len(in.RequiredHeaders)),
 		SourceFilePath:  in.SourceFilePath,
-		FileSHA256Cache: s.UserCaches.GetFilesCache(userID),
+		UserInfo:        s.Users.GetUser(userID),
 	}
 
-	sessionID := s.Sessions.OpenNewSession(session)
+	sessionID := s.UserSessions.OpenNewSession(session)
 	session.WorkingDir = path.Join(s.SessionsDir, fmt.Sprint(sessionID))
 
 	if err := os.MkdirAll(session.WorkingDir, os.ModePerm); err != nil {
-		s.Sessions.CloseSession(sessionID)
+		s.UserSessions.CloseSession(sessionID)
 		callObserver.FinishWithError()
 		return nil, fmt.Errorf("Can't create session working directory: %v", err)
 	}
@@ -65,7 +65,7 @@ func (s *CompilationServer) StartCompilationSession(ctx context.Context, in *pb.
 	missedHeadersSHA256 := make([]int32, 0, len(in.RequiredHeaders))
 	missedHeadersFullCopy := make([]int32, 0, len(in.RequiredHeaders))
 	for index, headerMetadata := range in.RequiredHeaders {
-		headerSHA256, ok := session.FileSHA256Cache.GetFileSHA256(headerMetadata.FilePath, headerMetadata.MTime)
+		headerSHA256, ok := session.UserInfo.HeaderSHA256Cache.GetFileSHA256(headerMetadata.FilePath, headerMetadata.MTime)
 		session.RequiredHeaders = append(session.RequiredHeaders, RequiredHeaderMetadata{
 			HeaderMetadata: headerMetadata,
 			SHA256Struct:   headerSHA256,
@@ -89,7 +89,7 @@ func (s *CompilationServer) StartCompilationSession(ctx context.Context, in *pb.
 	}
 
 	return &pb.StartCompilationSessionReply{
-		SessionID:             s.Sessions.OpenNewSession(session),
+		SessionID:             s.UserSessions.OpenNewSession(session),
 		MissedHeadersSHA256:   missedHeadersSHA256,
 		MissedHeadersFullCopy: missedHeadersFullCopy,
 	}, nil
@@ -99,7 +99,7 @@ func (s *CompilationServer) StartCompilationSession(ctx context.Context, in *pb.
 func (s *CompilationServer) SendHeaderSHA256(ctx context.Context, in *pb.SendHeaderSHA256Request) (*pb.SendHeaderSHA256Reply, error) {
 	callObserver := s.Stats.SendHeaderSHA256.StartRPCCall()
 
-	session := s.Sessions.GetSession(in.SessionID)
+	session := s.UserSessions.GetSession(in.SessionID)
 	if session == nil {
 		callObserver.FinishWithError()
 		return nil, fmt.Errorf("Unknown SessionID %d", in.SessionID)
@@ -108,7 +108,7 @@ func (s *CompilationServer) SendHeaderSHA256(ctx context.Context, in *pb.SendHea
 	defer callObserver.Finish()
 	headerMetadata := &session.RequiredHeaders[in.HeaderIndex]
 	headerMetadata.SHA256Struct = common.SHA256MessageToSHA256Struct(in.HeaderSHA256)
-	session.FileSHA256Cache.SetFileSHA256(headerMetadata.FilePath, headerMetadata.MTime, headerMetadata.SHA256Struct)
+	session.UserInfo.HeaderSHA256Cache.SetFileSHA256(headerMetadata.FilePath, headerMetadata.MTime, headerMetadata.SHA256Struct)
 	if systemSHA256 := s.SystemHeaders.GetSystemHeaderSHA256(headerMetadata.FilePath); systemSHA256 == headerMetadata.SHA256Struct {
 		return &pb.SendHeaderSHA256Reply{}, nil
 	}
@@ -170,7 +170,7 @@ func (s *CompilationServer) SendHeader(stream pb.CompilationService_SendHeaderSe
 		return fmt.Errorf("Metadata af first chunk is expected")
 	}
 
-	session := s.Sessions.GetSession(metadata.SessionID)
+	session := s.UserSessions.GetSession(metadata.SessionID)
 	if session == nil {
 		callObserver.FinishWithError()
 		return fmt.Errorf("Unknown SessionID %d", metadata.SessionID)
@@ -213,7 +213,7 @@ func (s *CompilationServer) SendHeader(stream pb.CompilationService_SendHeaderSe
 
 func (s *CompilationServer) closeSession(session *UserSession, sessionID uint64, close bool) {
 	if close {
-		s.Sessions.CloseSession(sessionID)
+		s.UserSessions.CloseSession(sessionID)
 		_ = os.RemoveAll(session.WorkingDir)
 	}
 }
@@ -222,7 +222,7 @@ func (s *CompilationServer) closeSession(session *UserSession, sessionID uint64,
 func (s *CompilationServer) CompileSource(ctx context.Context, in *pb.CompileSourceRequest) (*pb.CompileSourceReply, error) {
 	callObserver := s.Stats.CompileSource.StartRPCCall()
 
-	session := s.Sessions.GetSession(in.SessionID)
+	session := s.UserSessions.GetSession(in.SessionID)
 	if session == nil {
 		callObserver.FinishWithError()
 		return nil, fmt.Errorf("Unknown SessionID %d", in.SessionID)
@@ -286,7 +286,7 @@ func (s *CompilationServer) CompileSource(ctx context.Context, in *pb.CompileSou
 // CloseSession ...
 func (s *CompilationServer) CloseSession(ctx context.Context, in *pb.CloseSessionRequest) (*pb.CloseSessionReply, error) {
 	callObserver := s.Stats.CloseSession.StartRPCCall()
-	session := s.Sessions.GetSession(in.SessionID)
+	session := s.UserSessions.GetSession(in.SessionID)
 	if session == nil {
 		callObserver.FinishWithError()
 		return nil, fmt.Errorf("Unknown SessionID %d", in.SessionID)

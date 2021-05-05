@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc"
 
 	pb "github.com/AlexK0/popcorn/internal/api/proto/v1"
+	_ "google.golang.org/grpc/encoding/gzip" // enables gzip compression for server
 )
 
 func cleanupWorkingDir(workingDir string) bool {
@@ -85,12 +86,12 @@ func main() {
 		WorkingDir:  settings.WorkingDir,
 		GRPCServer:  grpcServer,
 
-		UserCaches:       server.MakeUserCache(),
+		Users:            server.MakeUsers(),
 		UploadingHeaders: server.MakeProcessingHeaders(),
 		SystemHeaders:    server.MakeSystemHeaderCache(),
 		HeaderFileCache:  headerCache,
 
-		Sessions: server.MakeUserSessions(),
+		UserSessions: server.MakeUserSessions(),
 
 		Stats: serverStats,
 	}

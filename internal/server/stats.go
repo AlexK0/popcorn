@@ -122,9 +122,9 @@ func (cs *CompilationServerStats) feedBufferWithStats(compilationServer *Compila
 	cs.writeFloatStat("server.uptime", time.Since(compilationServer.StartTime).Seconds())
 	cs.writeStat("server.goroutines", int64(runtime.NumGoroutine()))
 
-	cs.writeStat("sessions.active", compilationServer.Sessions.ActiveSessions())
+	cs.writeStat("sessions.active", compilationServer.UserSessions.ActiveSessions())
 
-	cs.writeStat("caches.user_sha256_caches.count", compilationServer.UserCaches.GetCachesCount())
+	cs.writeStat("caches.user_sha256_caches.count", compilationServer.Users.GetUsersCount())
 
 	cs.writeStat("caches.system_headers.count", compilationServer.SystemHeaders.GetSystemHeadersCount())
 
