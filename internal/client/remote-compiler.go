@@ -50,10 +50,11 @@ func MakeRemoteCompiler(localCompiler *LocalCompiler, serverHostPort string, wor
 	}, nil
 }
 
-func (compiler *RemoteCompiler) readHeaderSHA256AndSend(path string, mtime int64, index int32) (bool, error) {
+func (compiler *RemoteCompiler) readHeaderAndSendSHA256OrBody(path string, mtime int64, index int32, wg *common.WaitGroupWithError) {
 	headerSha256, err := compiler.headersSha256Calculator.CalcSHA256(path, mtime)
 	if err != nil {
-		return false, err
+		wg.Done(err)
+		return
 	}
 	reply, err := compiler.grpcClient.Client.SendHeaderSHA256(
 		compiler.grpcClient.CallContext,
@@ -62,22 +63,25 @@ func (compiler *RemoteCompiler) readHeaderSHA256AndSend(path string, mtime int64
 			HeaderIndex:  index,
 			HeaderSHA256: common.SHA256StructToSHA256Message(headerSha256),
 		})
-	if err != nil {
-		return false, err
+	if err == nil && reply.FullCopyRequired {
+		compiler.readHeaderAndSend(path, index, wg)
+	} else {
+		wg.Done(err)
 	}
-	return reply.FullCopyRequired, nil
 }
 
-func (compiler *RemoteCompiler) readHeaderAndSend(path string, index int32) error {
+func (compiler *RemoteCompiler) readHeaderAndSend(path string, index int32, wg *common.WaitGroupWithError) {
 	file, err := os.Open(path)
 	if err != nil {
-		return fmt.Errorf("Can't open header %q for sending: %v", path, err)
+		wg.Done(fmt.Errorf("Can't open header %q for sending: %v", path, err))
+		return
 	}
 	defer file.Close()
 
 	stream, err := compiler.grpcClient.Client.SendHeader(compiler.grpcClient.CallContext)
 	if err != nil {
-		return fmt.Errorf("Can't open grpc stream: %v", err)
+		wg.Done(fmt.Errorf("Can't open grpc stream: %v", err))
+		return
 	}
 
 	err = stream.Send(&pb.SendHeaderRequest{
@@ -89,7 +93,8 @@ func (compiler *RemoteCompiler) readHeaderAndSend(path string, index int32) erro
 		},
 	})
 	if err != nil {
-		return fmt.Errorf("Can't send header metadata: %v", err)
+		wg.Done(fmt.Errorf("Can't send header metadata: %v", err))
+		return
 	}
 
 	var buffer [256 * 1024]byte
@@ -99,7 +104,8 @@ func (compiler *RemoteCompiler) readHeaderAndSend(path string, index int32) erro
 			break
 		}
 		if err != nil {
-			return fmt.Errorf("Can't read header %q: %v", path, err)
+			wg.Done(fmt.Errorf("Can't read header %q: %v", path, err))
+			return
 		}
 		err = stream.Send(&pb.SendHeaderRequest{
 			Chunk: &pb.SendHeaderRequest_HeaderBodyChunk{
@@ -112,9 +118,10 @@ func (compiler *RemoteCompiler) readHeaderAndSend(path string, index int32) erro
 	}
 
 	if _, err = stream.CloseAndRecv(); err != nil {
-		return fmt.Errorf("Can't send header: %v", err)
+		wg.Done(fmt.Errorf("Can't send header: %v", err))
+	} else {
+		wg.Done(nil)
 	}
-	return nil
 }
 
 // SetupEnvironment ...
@@ -135,23 +142,15 @@ func (compiler *RemoteCompiler) SetupEnvironment(headers []*pb.HeaderMetadata) e
 	compiler.sessionID = clientCacheStream.SessionID
 	compiler.needCloseSession = true
 
-	fullCopyRequired := clientCacheStream.MissedHeadersFullCopy
+	wg := common.WaitGroupWithError{}
+	wg.Add(len(clientCacheStream.MissedHeadersSHA256) + len(clientCacheStream.MissedHeadersFullCopy))
 	for _, index := range clientCacheStream.MissedHeadersSHA256 {
-		needFull, err := compiler.readHeaderSHA256AndSend(headers[index].FilePath, headers[index].MTime, index)
-		if err != nil {
-			return err
-		}
-		if needFull {
-			fullCopyRequired = append(fullCopyRequired, index)
-		}
+		go compiler.readHeaderAndSendSHA256OrBody(headers[index].FilePath, headers[index].MTime, index, &wg)
 	}
-
-	for _, index := range fullCopyRequired {
-		if err = compiler.readHeaderAndSend(headers[index].FilePath, index); err != nil {
-			return err
-		}
+	for _, index := range clientCacheStream.MissedHeadersFullCopy {
+		go compiler.readHeaderAndSend(headers[index].FilePath, index, &wg)
 	}
-	return nil
+	return wg.Wait()
 }
 
 // CompileSource ...
@@ -193,4 +192,5 @@ func (compiler *RemoteCompiler) Clear() {
 	}
 	compiler.needCloseSession = false
 	compiler.grpcClient.Clear()
+	compiler.headersSha256Calculator.Clear()
 }

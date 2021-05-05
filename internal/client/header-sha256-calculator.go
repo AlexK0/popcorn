@@ -57,6 +57,6 @@ func (calculator *HeaderSHA256Calculator) CalcSHA256(headerPath string, mtime in
 
 func (calculator *HeaderSHA256Calculator) Clear() {
 	for _, fileLockPath := range calculator.trash {
-		_ = os.Remove(fileLockPath)
+		os.Remove(fileLockPath)
 	}
 }
