@@ -51,7 +51,7 @@ func MakeRemoteCompiler(localCompiler *LocalCompiler, serverHostPort string, wor
 }
 
 func (compiler *RemoteCompiler) readHeaderAndSendSHA256OrBody(path string, mtime int64, index int32, wg *common.WaitGroupWithError) {
-	headerSha256, err := compiler.headersSha256Calculator.CalcSHA256(path, mtime)
+	headerSha256, err := common.GetFileSHA256(path)
 	if err != nil {
 		wg.Done(err)
 		return
