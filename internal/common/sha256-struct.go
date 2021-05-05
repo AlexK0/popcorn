@@ -26,15 +26,6 @@ func makeSHA256Struct(b []byte) SHA256Struct {
 	}
 }
 
-func SHA256StructToBytes(sha256struct SHA256Struct) []byte {
-	b := make([]byte, 32)
-	binary.BigEndian.PutUint64(b[0:8], sha256struct.B0_7)
-	binary.BigEndian.PutUint64(b[8:16], sha256struct.B8_15)
-	binary.BigEndian.PutUint64(b[16:24], sha256struct.B16_23)
-	binary.BigEndian.PutUint64(b[24:32], sha256struct.B24_31)
-	return b
-}
-
 // MakeSHA256StructFromArray ...
 func MakeSHA256StructFromArray(b [32]byte) SHA256Struct {
 	return makeSHA256Struct(b[:])

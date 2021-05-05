@@ -12,7 +12,6 @@ import (
 	"github.com/AlexK0/popcorn/internal/server"
 
 	"google.golang.org/grpc"
-	_ "google.golang.org/grpc/encoding/gzip" // enables gzip compression for server
 
 	pb "github.com/AlexK0/popcorn/internal/api/proto/v1"
 )

@@ -21,8 +21,7 @@ type RemoteCompiler struct {
 	userID     *pb.SHA256Message
 	sessionID  uint64
 
-	needCloseSession        bool
-	headersSha256Calculator *HeaderSHA256Calculator
+	needCloseSession bool
 }
 
 // MakeRemoteCompiler ...
@@ -45,8 +44,6 @@ func MakeRemoteCompiler(localCompiler *LocalCompiler, serverHostPort string, wor
 
 		grpcClient: grpcClient,
 		userID:     userID,
-
-		headersSha256Calculator: MakeHeaderSHA256Calculator(workingDir),
 	}, nil
 }
 
@@ -201,5 +198,4 @@ func (compiler *RemoteCompiler) Clear() {
 	}
 	compiler.needCloseSession = false
 	compiler.grpcClient.Clear()
-	compiler.headersSha256Calculator.Clear()
 }

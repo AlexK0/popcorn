@@ -5,8 +5,8 @@ import (
 	"time"
 
 	pb "github.com/AlexK0/popcorn/internal/api/proto/v1"
+	"github.com/AlexK0/popcorn/internal/common"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/encoding/gzip"
 )
 
 // GRPCClient ...
@@ -23,7 +23,7 @@ func MakeGRPCClient(serverHostPort string) (*GRPCClient, error) {
 		grpc.WithInsecure(),
 		grpc.WithBlock(),
 		grpc.WithDefaultCallOptions(
-			grpc.UseCompressor(gzip.Name),
+			grpc.UseCompressor(common.ZstdName),
 			grpc.MaxCallRecvMsgSize(1024*1204*1024),
 			grpc.MaxCallSendMsgSize(1024*1204*1024)))
 	if err != nil {
