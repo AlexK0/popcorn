@@ -4,6 +4,7 @@ import (
 	"errors"
 	"hash/fnv"
 	"os"
+	"path/filepath"
 
 	pb "github.com/AlexK0/popcorn/internal/api/proto/v1"
 	"github.com/AlexK0/popcorn/internal/common"
@@ -34,10 +35,10 @@ func readHeadersMeta(headers []string) ([]*pb.HeaderMetadata, error) {
 	return cachedHeaders, err
 }
 
-func chooseServerNumber(localCompiler *LocalCompiler, hostsCount int) uint64 {
-	hasher := fnv.New64()
-	_, _ = hasher.Write([]byte(localCompiler.inFile))
-	return hasher.Sum64() % uint64(hostsCount)
+func chooseServerNumber(localCompiler *LocalCompiler, hostsCount int) int {
+	hasher := fnv.New32a()
+	_, _ = hasher.Write([]byte(filepath.Base(localCompiler.inFile)))
+	return int(hasher.Sum32()) % hostsCount
 }
 
 func tryRemoteCompilation(localCompiler *LocalCompiler, settings *Settings) (retCode int, stdout []byte, stderr []byte, err error) {
@@ -57,7 +58,7 @@ func tryRemoteCompilation(localCompiler *LocalCompiler, settings *Settings) (ret
 	}
 
 	remoteServer := settings.Servers[chooseServerNumber(localCompiler, hostsCount)]
-	remoteCompiler, err := MakeRemoteCompiler(localCompiler, remoteServer)
+	remoteCompiler, err := MakeRemoteCompiler(localCompiler, remoteServer, settings.WorkingDir)
 	if err != nil {
 		return 0, nil, nil, err
 	}

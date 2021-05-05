@@ -18,11 +18,12 @@ type RemoteCompiler struct {
 	userID     *pb.SHA256Message
 	sessionID  uint64
 
-	needCloseSession bool
+	needCloseSession        bool
+	headersSha256Calculator HeaderSHA256Calculator
 }
 
 // MakeRemoteCompiler ...
-func MakeRemoteCompiler(localCompiler *LocalCompiler, serverHostPort string) (*RemoteCompiler, error) {
+func MakeRemoteCompiler(localCompiler *LocalCompiler, serverHostPort string, workingDir string) (*RemoteCompiler, error) {
 	userID, err := common.MakeUniqueUserID()
 	if err != nil {
 		return nil, err
@@ -41,11 +42,13 @@ func MakeRemoteCompiler(localCompiler *LocalCompiler, serverHostPort string) (*R
 
 		grpcClient: grpcClient,
 		userID:     userID,
+
+		headersSha256Calculator: HeaderSHA256Calculator{WorkingDir: workingDir},
 	}, nil
 }
 
-func (compiler *RemoteCompiler) readHeaderSHA256AndSend(path string, index int32) (bool, error) {
-	headerSha256, err := common.GetFileSHA256(path)
+func (compiler *RemoteCompiler) readHeaderSHA256AndSend(path string, mtime int64, index int32) (bool, error) {
+	headerSha256, err := compiler.headersSha256Calculator.CalcSHA256(path, mtime)
 	if err != nil {
 		return false, err
 	}
@@ -96,7 +99,7 @@ func (compiler *RemoteCompiler) SetupEnvironment(headers []*pb.HeaderMetadata) e
 
 	fullCopyRequired := clientCacheStream.MissedHeadersFullCopy
 	for _, index := range clientCacheStream.MissedHeadersSHA256 {
-		needFull, err := compiler.readHeaderSHA256AndSend(headers[index].FilePath, index)
+		needFull, err := compiler.readHeaderSHA256AndSend(headers[index].FilePath, headers[index].MTime, index)
 		if err != nil {
 			return err
 		}
