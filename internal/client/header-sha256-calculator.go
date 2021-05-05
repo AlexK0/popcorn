@@ -15,6 +15,13 @@ type HeaderSHA256Calculator struct {
 	trash      []string
 }
 
+func MakeHeaderSHA256Calculator(workingDir string) *HeaderSHA256Calculator {
+	return &HeaderSHA256Calculator{
+		WorkingDir: workingDir,
+		trash:      make([]string, 0, 16),
+	}
+}
+
 func (calculator *HeaderSHA256Calculator) CalcSHA256(headerPath string, mtime int64) (common.SHA256Struct, error) {
 	if !filepath.IsAbs(headerPath) {
 		return common.SHA256Struct{}, fmt.Errorf("Bad header path %q", headerPath)

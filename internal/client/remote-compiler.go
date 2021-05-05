@@ -22,7 +22,7 @@ type RemoteCompiler struct {
 	sessionID  uint64
 
 	needCloseSession        bool
-	headersSha256Calculator HeaderSHA256Calculator
+	headersSha256Calculator *HeaderSHA256Calculator
 }
 
 // MakeRemoteCompiler ...
@@ -46,7 +46,7 @@ func MakeRemoteCompiler(localCompiler *LocalCompiler, serverHostPort string, wor
 		grpcClient: grpcClient,
 		userID:     userID,
 
-		headersSha256Calculator: HeaderSHA256Calculator{WorkingDir: workingDir},
+		headersSha256Calculator: MakeHeaderSHA256Calculator(workingDir),
 	}, nil
 }
 
@@ -142,13 +142,22 @@ func (compiler *RemoteCompiler) SetupEnvironment(headers []*pb.HeaderMetadata) e
 	compiler.sessionID = clientCacheStream.SessionID
 	compiler.needCloseSession = true
 
+	sem := make(chan int, 8)
 	wg := common.WaitGroupWithError{}
 	wg.Add(len(clientCacheStream.MissedHeadersSHA256) + len(clientCacheStream.MissedHeadersFullCopy))
 	for _, index := range clientCacheStream.MissedHeadersSHA256 {
-		go compiler.readHeaderAndSendSHA256OrBody(headers[index].FilePath, headers[index].MTime, index, &wg)
+		sem <- 1
+		go func(index int32) {
+			compiler.readHeaderAndSendSHA256OrBody(headers[index].FilePath, headers[index].MTime, index, &wg)
+			<-sem
+		}(index)
 	}
 	for _, index := range clientCacheStream.MissedHeadersFullCopy {
-		go compiler.readHeaderAndSend(headers[index].FilePath, index, &wg)
+		sem <- 1
+		go func(index int32) {
+			compiler.readHeaderAndSend(headers[index].FilePath, index, &wg)
+			<-sem
+		}(index)
 	}
 	return wg.Wait()
 }
