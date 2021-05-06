@@ -71,8 +71,7 @@ func (session *UserSession) RemoveUnusedIncludeDirsAndGetCompilerArgs() []string
 
 			if dirIsUsed {
 				includeDir, _ = session.GetDirPathInWorkingDir(includeDir)
-				compilerArgs = append(compilerArgs, arg)
-				compilerArgs = append(compilerArgs, includeDir)
+				compilerArgs = append(compilerArgs, arg, includeDir)
 			}
 			continue
 		}
