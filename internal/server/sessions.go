@@ -15,18 +15,19 @@ import (
 type RequiredHeaderMetadata struct {
 	*pb.HeaderMetadata
 	common.SHA256Struct
+	UseFromSystem bool
 }
 
 const POPCORN_SERVER_USER_DIR = "/popcorn-server-user/"
 
 // UserSession ...
 type UserSession struct {
-	userDir string
+	userDir      string
+	compilerArgs []string
 
 	SourceFilePath    string
 	OutObjectFilePath string
 	Compiler          string
-	CompilerArgs      []string
 	WorkingDir        string
 	UseObjectCache    bool
 
@@ -49,6 +50,35 @@ func (session *UserSession) GetDirPathInWorkingDir(dirPathOnClientFileSystem str
 		dirPathOnClientFileSystem += "/"
 	}
 	return session.GetFilePathInWorkingDir(dirPathOnClientFileSystem)
+}
+
+func (session *UserSession) RemoveUnusedIncludeDirsAndGetCompilerArgs() []string {
+	compilerArgs := make([]string, 0, len(session.compilerArgs))
+	for i := 0; i < len(session.compilerArgs); i++ {
+		arg := session.compilerArgs[i]
+		if (arg == "-I" || arg == "-isystem" || arg == "-iquote") && i+1 < len(session.compilerArgs) {
+			i++
+			includeDir := session.compilerArgs[i]
+			dirIsUsed := func() bool {
+				// TODO write something better?
+				for _, usedHeader := range session.RequiredHeaders {
+					if !usedHeader.UseFromSystem && strings.HasPrefix(usedHeader.FilePath, includeDir) {
+						return true
+					}
+				}
+				return false
+			}()
+
+			if dirIsUsed {
+				includeDir, _ = session.GetDirPathInWorkingDir(includeDir)
+				compilerArgs = append(compilerArgs, arg)
+				compilerArgs = append(compilerArgs, includeDir)
+			}
+			continue
+		}
+		compilerArgs = append(compilerArgs, arg)
+	}
+	return compilerArgs
 }
 
 // Sessions ...
@@ -95,33 +125,7 @@ func (s *Sessions) OpenNewSession(in *pb.StartCompilationSessionRequest, session
 
 	newSession.SourceFilePath = inFileAbs
 	newSession.OutObjectFilePath = outFileAbs
-
-	compilerArgs := make([]string, 0, 3+len(in.CompilerArgs))
-	for i := 0; i < len(in.CompilerArgs); i++ {
-		arg := in.CompilerArgs[i]
-		if (arg == "-I" || arg == "-isystem" || arg == "-iquote") && i+1 < len(in.CompilerArgs) {
-			i++
-			includeDir := in.CompilerArgs[i]
-			dirIsUsed := func() bool {
-				for _, usedHeader := range in.RequiredHeaders {
-					if strings.HasPrefix(usedHeader.FilePath, includeDir) {
-						return true
-					}
-				}
-				return false
-			}()
-
-			if dirIsUsed {
-				includeDir, _ = newSession.GetDirPathInWorkingDir(includeDir)
-				compilerArgs = append(compilerArgs, arg)
-				compilerArgs = append(compilerArgs, includeDir)
-			}
-			continue
-		}
-		compilerArgs = append(compilerArgs, arg)
-	}
-
-	newSession.CompilerArgs = append(compilerArgs, inFileRel, "-o", outFileRel)
+	newSession.compilerArgs = append(in.CompilerArgs, inFileRel, "-o", outFileRel)
 	return sessionID, newSession
 }
 

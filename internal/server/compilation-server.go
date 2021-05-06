@@ -55,6 +55,7 @@ func (s *CompilationServer) StartCompilationSession(ctx context.Context, in *pb.
 			continue
 		}
 		if systemSHA256 := s.SystemHeaders.GetSystemHeaderSHA256(requiredHeader.FilePath); systemSHA256 == requiredHeader.SHA256Struct {
+			requiredHeader.UseFromSystem = true
 			continue
 		}
 		_, headerPathInWorkingDir := session.GetFilePathInWorkingDir(requiredHeader.FilePath)
@@ -90,6 +91,7 @@ func (s *CompilationServer) SendHeaderSHA256(ctx context.Context, in *pb.SendHea
 	headerMetadata.SHA256Struct = common.SHA256MessageToSHA256Struct(in.HeaderSHA256)
 	session.UserInfo.HeaderSHA256Cache.SetFileSHA256(headerMetadata.FilePath, headerMetadata.MTime, headerMetadata.SHA256Struct)
 	if systemSHA256 := s.SystemHeaders.GetSystemHeaderSHA256(headerMetadata.FilePath); systemSHA256 == headerMetadata.SHA256Struct {
+		headerMetadata.UseFromSystem = true
 		return &pb.SendHeaderSHA256Reply{}, nil
 	}
 
@@ -216,7 +218,7 @@ func (s *CompilationServer) CompileSource(ctx context.Context, in *pb.CompileSou
 		return nil, fmt.Errorf("Can't write source for compilation: %v", err)
 	}
 
-	compilerProc := exec.Command(session.Compiler, session.CompilerArgs...)
+	compilerProc := exec.Command(session.Compiler, session.RemoveUnusedIncludeDirsAndGetCompilerArgs()...)
 	compilerProc.Dir = session.WorkingDir
 	var compilerStderr, compilerStdout bytes.Buffer
 	compilerProc.Stderr = &compilerStderr
