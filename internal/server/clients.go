@@ -84,6 +84,7 @@ func (users *Clients) PurgeOutdatedUsers() {
 		users.mu.Lock()
 		delete(users.table, outdatedUserKey)
 		users.mu.Unlock()
+	} else {
+		users.lastPurgeTime = now
 	}
-	users.lastPurgeTime = now
 }
