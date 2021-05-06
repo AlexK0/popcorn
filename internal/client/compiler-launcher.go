@@ -58,7 +58,7 @@ func tryRemoteCompilation(localCompiler *LocalCompiler, settings *Settings) (ret
 	}
 
 	remoteServer := settings.Servers[chooseServerNumber(localCompiler, hostsCount)]
-	remoteCompiler, err := MakeRemoteCompiler(localCompiler, remoteServer, settings.WorkingDir)
+	remoteCompiler, err := MakeRemoteCompiler(localCompiler, remoteServer)
 	if err != nil {
 		return 0, nil, nil, err
 	}
@@ -75,7 +75,7 @@ func tryRemoteCompilation(localCompiler *LocalCompiler, settings *Settings) (ret
 func PerformCompilation(compilerCmdLine []string, settings *Settings) (retCode int, stdout []byte, stderr []byte) {
 	localCompiler := MakeLocalCompiler(compilerCmdLine)
 	if localCompiler.RemoteCompilationAllowed {
-		common.LogInfo("Trying remote compilaton")
+		common.LogInfo(1, "Trying remote compilaton")
 		retCode, stdout, stderr, err := tryRemoteCompilation(localCompiler, settings)
 		if err == nil {
 			return retCode, stdout, stderr

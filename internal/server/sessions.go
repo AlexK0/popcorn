@@ -25,7 +25,7 @@ type UserSession struct {
 
 	RequiredHeaders []RequiredHeaderMetadata
 
-	UserInfo *User
+	UserInfo *Client
 }
 
 // Sessions ...

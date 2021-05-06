@@ -28,7 +28,7 @@ type CompilationServer struct {
 
 	GRPCServer *grpc.Server
 
-	Users            *Users
+	Clients          *Clients
 	UploadingHeaders *SendingHeaders
 	SystemHeaders    *SystemHeaderCache
 	HeaderFileCache  *FileCache
@@ -49,7 +49,7 @@ func (s *CompilationServer) StartCompilationSession(ctx context.Context, in *pb.
 		CompilerArgs:    in.CompilerArgs,
 		RequiredHeaders: make([]RequiredHeaderMetadata, 0, len(in.RequiredHeaders)),
 		SourceFilePath:  in.SourceFilePath,
-		UserInfo:        s.Users.GetUser(userID),
+		UserInfo:        s.Clients.GetUser(userID),
 	}
 
 	sessionID := s.UserSessions.OpenNewSession(session)
@@ -89,7 +89,7 @@ func (s *CompilationServer) StartCompilationSession(ctx context.Context, in *pb.
 	}
 
 	return &pb.StartCompilationSessionReply{
-		SessionID:             s.UserSessions.OpenNewSession(session),
+		SessionID:             sessionID,
 		MissedHeadersSHA256:   missedHeadersSHA256,
 		MissedHeadersFullCopy: missedHeadersFullCopy,
 	}, nil
@@ -261,7 +261,7 @@ func (s *CompilationServer) CompileSource(ctx context.Context, in *pb.CompileSou
 	compilerProc.Stderr = &compilerStderr
 	compilerProc.Stdout = &compilerStdout
 
-	common.LogInfo("Launch compiler:", compilerProc.Args)
+	common.LogInfo(1, "Launch compiler:", compilerProc.Args)
 	_ = compilerProc.Run()
 
 	outFileFull := path.Join(session.WorkingDir, outFile)

@@ -25,6 +25,7 @@ func (c *Cron) doCron() {
 		c.Server.Stats.SendStats(c.Server)
 
 		c.Server.HeaderFileCache.PurgeLastElementsIfRequired()
+		c.Server.Clients.PurgeOutdatedUsers()
 
 		sleepTime := time.Second - time.Since(cronStartTime)
 		if sleepTime <= 0 {

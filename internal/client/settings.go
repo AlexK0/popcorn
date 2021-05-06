@@ -12,7 +12,6 @@ type Settings struct {
 	Servers     []string
 	LogFileName string
 	LogSeverity string
-	WorkingDir  string
 }
 
 func getEnvValue(envVar string, key string) string {
@@ -26,7 +25,6 @@ func getEnvValue(envVar string, key string) string {
 func ReadClientSettings() *Settings {
 	settings := Settings{
 		LogSeverity: common.WarningSeverity,
-		WorkingDir:  "/tmp/popcorn-client",
 	}
 	for _, envVar := range os.Environ() {
 		if value := getEnvValue(envVar, "POPCORN_SERVERS="); len(value) != 0 {
@@ -42,8 +40,6 @@ func ReadClientSettings() *Settings {
 			settings.LogFileName = value
 		} else if value := getEnvValue(envVar, "POPCORN_LOG_SEVERITY="); len(value) != 0 {
 			settings.LogSeverity = value
-		} else if value := getEnvValue(envVar, "POPCORN_WORKING_DIR="); len(value) != 0 {
-			settings.WorkingDir = value
 		}
 	}
 

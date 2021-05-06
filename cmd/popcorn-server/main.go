@@ -86,7 +86,7 @@ func main() {
 		WorkingDir:  settings.WorkingDir,
 		GRPCServer:  grpcServer,
 
-		Users:            server.MakeUsers(),
+		Clients:          server.MakeUsers(),
 		UploadingHeaders: server.MakeProcessingHeaders(),
 		SystemHeaders:    server.MakeSystemHeaderCache(),
 		HeaderFileCache:  headerCache,

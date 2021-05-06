@@ -25,7 +25,7 @@ type RemoteCompiler struct {
 }
 
 // MakeRemoteCompiler ...
-func MakeRemoteCompiler(localCompiler *LocalCompiler, serverHostPort string, workingDir string) (*RemoteCompiler, error) {
+func MakeRemoteCompiler(localCompiler *LocalCompiler, serverHostPort string) (*RemoteCompiler, error) {
 	userID, err := common.MakeUniqueUserID()
 	if err != nil {
 		return nil, err

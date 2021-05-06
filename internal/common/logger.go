@@ -13,12 +13,13 @@ type fileLogWriter struct {
 	logFile string
 	mu      sync.RWMutex
 	file    *os.File
+
+	logComponent grpclog.DepthLoggerV2
 }
 
 var (
-	logWriter = fileLogWriter{}
+	logWriter = fileLogWriter{logComponent: grpclog.Component("unknown")}
 
-	logComponent = grpclog.Component("unknown")
 	// ErrUnknownSeverity ...
 	ErrUnknownSeverity = errors.New("Unknown logger severity")
 
@@ -79,7 +80,7 @@ func LoggerInit(component string, logFile string, severity string) error {
 		return ErrUnknownSeverity
 	}
 
-	logComponent = grpclog.Component(component)
+	logWriter.logComponent = grpclog.Component(component)
 	return nil
 }
 
@@ -95,20 +96,20 @@ func GetLogFileName() string {
 
 // LogInfo ...
 func LogInfo(v ...interface{}) {
-	logComponent.Info(v...)
+	logWriter.logComponent.Info(v...)
 }
 
 // LogWarning ...
 func LogWarning(v ...interface{}) {
-	logComponent.Warning(v...)
+	logWriter.logComponent.Warning(v...)
 }
 
 // LogError ...
 func LogError(v ...interface{}) {
-	logComponent.Error(v...)
+	logWriter.logComponent.Error(v...)
 }
 
 // LogFatal ...
 func LogFatal(v ...interface{}) {
-	logComponent.Fatal(v...)
+	logWriter.logComponent.Fatal(v...)
 }

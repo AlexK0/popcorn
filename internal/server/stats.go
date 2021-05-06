@@ -124,7 +124,8 @@ func (cs *CompilationServerStats) feedBufferWithStats(compilationServer *Compila
 
 	cs.writeStat("sessions.active", compilationServer.UserSessions.ActiveSessions())
 
-	cs.writeStat("caches.user_sha256_caches.count", compilationServer.Users.GetUsersCount())
+	cs.writeStat("caches.clients.count", compilationServer.Clients.Count())
+	cs.writeStat("caches.clients.random_client_cache_size", compilationServer.Clients.GetRandomClientCacheSize())
 
 	cs.writeStat("caches.system_headers.count", compilationServer.SystemHeaders.GetSystemHeadersCount())
 
