@@ -83,7 +83,6 @@ func main() {
 	compilationServer := &server.CompilationServer{
 		StartTime:   time.Now(),
 		SessionsDir: path.Join(settings.WorkingDir, "sessions"),
-		WorkingDir:  settings.WorkingDir,
 		GRPCServer:  grpcServer,
 
 		Clients:          server.MakeUsers(),

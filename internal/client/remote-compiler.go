@@ -19,6 +19,7 @@ type RemoteCompiler struct {
 
 	grpcClient *GRPCClient
 	userID     *pb.SHA256Message
+	userName   string
 	sessionID  uint64
 
 	needCloseSession bool
@@ -26,7 +27,7 @@ type RemoteCompiler struct {
 
 // MakeRemoteCompiler ...
 func MakeRemoteCompiler(localCompiler *LocalCompiler, serverHostPort string) (*RemoteCompiler, error) {
-	userID, err := common.MakeUniqueUserID()
+	userName, userID, err := common.MakeUniqueUserID()
 	if err != nil {
 		return nil, err
 	}
@@ -44,6 +45,7 @@ func MakeRemoteCompiler(localCompiler *LocalCompiler, serverHostPort string) (*R
 
 		grpcClient: grpcClient,
 		userID:     userID,
+		userName:   userName,
 	}, nil
 }
 
@@ -127,6 +129,7 @@ func (compiler *RemoteCompiler) SetupEnvironment(headers []*pb.HeaderMetadata) e
 		compiler.grpcClient.CallContext,
 		&pb.StartCompilationSessionRequest{
 			UserID:          compiler.userID,
+			UserName:        compiler.userName,
 			SourceFilePath:  compiler.inFile,
 			Compiler:        compiler.name,
 			CompilerArgs:    compiler.remoteCmdArgs,

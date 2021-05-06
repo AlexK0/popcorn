@@ -17,6 +17,10 @@ type SHA256Struct struct {
 	B0_7, B8_15, B16_23, B24_31 uint64
 }
 
+func (h *SHA256Struct) IsEmpty() bool {
+	return h.B0_7 == 0 && h.B8_15 == 0 && h.B16_23 == 0 && h.B24_31 == 0
+}
+
 func makeSHA256Struct(b []byte) SHA256Struct {
 	return SHA256Struct{
 		B0_7:   binary.BigEndian.Uint64(b[0:8]),
@@ -67,10 +71,10 @@ func feedHash(hasher io.Writer, data []byte) {
 }
 
 // MakeUniqueUserID ...
-func MakeUniqueUserID() (*pb.SHA256Message, error) {
+func MakeUniqueUserID() (string, *pb.SHA256Message, error) {
 	netInterfaces, err := net.Interfaces()
 	if err != nil {
-		return nil, err
+		return "", nil, err
 	}
 
 	hasher := sha256.New()
@@ -84,7 +88,7 @@ func MakeUniqueUserID() (*pb.SHA256Message, error) {
 
 	user, err := user.Current()
 	if err != nil {
-		return nil, err
+		return "", nil, err
 	}
 	feedHash(hasher, []byte(user.Uid))
 	feedHash(hasher, []byte(user.Gid))
@@ -94,11 +98,11 @@ func MakeUniqueUserID() (*pb.SHA256Message, error) {
 
 	machineIDHex, err := ioutil.ReadFile("/etc/machine-id")
 	if err != nil {
-		return nil, err
+		return "", nil, err
 	}
 
 	feedHash(hasher, machineIDHex)
-	return SHA256StructToSHA256Message(MakeSHA256StructFromSlice(hasher.Sum(nil))), nil
+	return user.Username, SHA256StructToSHA256Message(MakeSHA256StructFromSlice(hasher.Sum(nil))), nil
 }
 
 // GetFileSHA256 ...

@@ -36,6 +36,7 @@ message StartCompilationSessionRequest {
     string Compiler = 4;
     repeated string CompilerArgs = 5;
     repeated HeaderMetadata RequiredHeaders = 6;
+    bool UseObjectCache = 7;
 }
 
 message StartCompilationSessionReply {

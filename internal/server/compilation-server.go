@@ -8,8 +8,6 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
-	"path"
-	"strings"
 	"time"
 
 	pb "github.com/AlexK0/popcorn/internal/api/proto/v1"
@@ -24,7 +22,6 @@ type CompilationServer struct {
 	StartTime time.Time
 
 	SessionsDir string
-	WorkingDir  string
 
 	GRPCServer *grpc.Server
 
@@ -41,19 +38,7 @@ type CompilationServer struct {
 // StartCompilationSession ...
 func (s *CompilationServer) StartCompilationSession(ctx context.Context, in *pb.StartCompilationSessionRequest) (*pb.StartCompilationSessionReply, error) {
 	callObserver := s.Stats.StartCompilationSession.StartRPCCall()
-
-	userID := common.SHA256MessageToSHA256Struct(in.UserID)
-	session := &UserSession{
-		UserID:          userID,
-		Compiler:        in.Compiler,
-		CompilerArgs:    in.CompilerArgs,
-		RequiredHeaders: make([]RequiredHeaderMetadata, 0, len(in.RequiredHeaders)),
-		SourceFilePath:  in.SourceFilePath,
-		UserInfo:        s.Clients.GetUser(userID),
-	}
-
-	sessionID := s.UserSessions.OpenNewSession(session)
-	session.WorkingDir = path.Join(s.SessionsDir, fmt.Sprint(sessionID))
+	sessionID, session := s.UserSessions.OpenNewSession(in, s.SessionsDir, s.Clients.GetUser(common.SHA256MessageToSHA256Struct(in.UserID)))
 
 	if err := os.MkdirAll(session.WorkingDir, os.ModePerm); err != nil {
 		s.UserSessions.CloseSession(sessionID)
@@ -64,24 +49,19 @@ func (s *CompilationServer) StartCompilationSession(ctx context.Context, in *pb.
 	defer callObserver.Finish()
 	missedHeadersSHA256 := make([]int32, 0, len(in.RequiredHeaders))
 	missedHeadersFullCopy := make([]int32, 0, len(in.RequiredHeaders))
-	for index, headerMetadata := range in.RequiredHeaders {
-		headerSHA256, ok := session.UserInfo.HeaderSHA256Cache.GetFileSHA256(headerMetadata.FilePath, headerMetadata.MTime)
-		session.RequiredHeaders = append(session.RequiredHeaders, RequiredHeaderMetadata{
-			HeaderMetadata: headerMetadata,
-			SHA256Struct:   headerSHA256,
-		})
-		if !ok {
+	for index, requiredHeader := range session.RequiredHeaders {
+		if requiredHeader.IsEmpty() {
 			missedHeadersSHA256 = append(missedHeadersSHA256, int32(index))
 			continue
 		}
-		if systemSHA256 := s.SystemHeaders.GetSystemHeaderSHA256(headerMetadata.FilePath); systemSHA256 == headerSHA256 {
+		if systemSHA256 := s.SystemHeaders.GetSystemHeaderSHA256(requiredHeader.FilePath); systemSHA256 == requiredHeader.SHA256Struct {
 			continue
 		}
-		headerPathInWorkingDir := path.Join(session.WorkingDir, headerMetadata.FilePath)
-		if s.HeaderFileCache.CreateLinkFromCache(headerMetadata.FilePath, headerSHA256, headerPathInWorkingDir) {
+		_, headerPathInWorkingDir := session.GetFilePathInWorkingDir(requiredHeader.FilePath)
+		if s.HeaderFileCache.CreateLinkFromCache(requiredHeader.FilePath, requiredHeader.SHA256Struct, headerPathInWorkingDir) {
 			continue
 		}
-		if s.UploadingHeaders.StartHeaderSending(headerMetadata.FilePath, headerSHA256) {
+		if s.UploadingHeaders.StartHeaderSending(requiredHeader.FilePath, requiredHeader.SHA256Struct) {
 			missedHeadersFullCopy = append(missedHeadersFullCopy, int32(index))
 		} else {
 			missedHeadersSHA256 = append(missedHeadersSHA256, int32(index))
@@ -113,7 +93,7 @@ func (s *CompilationServer) SendHeaderSHA256(ctx context.Context, in *pb.SendHea
 		return &pb.SendHeaderSHA256Reply{}, nil
 	}
 
-	headerPathInWorkingDir := path.Join(session.WorkingDir, headerMetadata.FilePath)
+	_, headerPathInWorkingDir := session.GetFilePathInWorkingDir(headerMetadata.FilePath)
 	start := time.Now()
 	// TODO Why 6 seconds?
 	for time.Since(start) < 6*time.Second {
@@ -178,7 +158,7 @@ func (s *CompilationServer) SendHeader(stream pb.CompilationService_SendHeaderSe
 
 	headerMetadata := &session.RequiredHeaders[metadata.HeaderIndex]
 	defer s.UploadingHeaders.FinishHeaderSending(headerMetadata.FilePath, headerMetadata.SHA256Struct)
-	headerPathInWorkingDir := path.Join(session.WorkingDir, headerMetadata.FilePath)
+	_, headerPathInWorkingDir := session.GetFilePathInWorkingDir(headerMetadata.FilePath)
 	if s.HeaderFileCache.CreateLinkFromCache(headerMetadata.FilePath, headerMetadata.SHA256Struct, headerPathInWorkingDir) {
 		s.Stats.SendingHeadersDoubleReceived.Increment()
 		callObserver.Finish()
@@ -230,46 +210,24 @@ func (s *CompilationServer) CompileSource(ctx context.Context, in *pb.CompileSou
 
 	defer s.closeSession(session, in.SessionID, in.CloseSessionAfterBuild)
 
-	inFileFull := path.Join(session.WorkingDir, session.SourceFilePath)
-	err := common.WriteFile(inFileFull, in.SourceBody)
+	err := common.WriteFile(session.SourceFilePath, in.SourceBody)
 	if err != nil {
 		callObserver.FinishWithError()
 		return nil, fmt.Errorf("Can't write source for compilation: %v", err)
 	}
 
-	compilerArgs := make([]string, 0, 3+len(session.CompilerArgs))
-	for i := 0; i < len(session.CompilerArgs); i++ {
-		arg := session.CompilerArgs[i]
-		if (arg == "-I" || arg == "-isystem" || arg == "-iquote") && i+1 < len(session.CompilerArgs) {
-			includeDir := session.CompilerArgs[i+1]
-			includeDirFull := path.Join(session.WorkingDir, includeDir)
-			if _, err = os.Stat(includeDirFull); err != nil && os.IsNotExist(err) {
-				i++
-				continue
-			}
-			session.CompilerArgs[i+1] = strings.TrimLeft(includeDir, "/")
-		}
-		compilerArgs = append(compilerArgs, arg)
-	}
-	inFile := strings.TrimLeft(session.SourceFilePath, "/")
-	outFile := inFile + ".o"
-	compilerArgs = append(compilerArgs, inFile, "-o", outFile)
-
-	compilerProc := exec.Command(session.Compiler, compilerArgs...)
+	compilerProc := exec.Command(session.Compiler, session.CompilerArgs...)
 	compilerProc.Dir = session.WorkingDir
 	var compilerStderr, compilerStdout bytes.Buffer
 	compilerProc.Stderr = &compilerStderr
 	compilerProc.Stdout = &compilerStdout
 
-	common.LogInfo(1, "Launch compiler:", compilerProc.Args)
+	common.LogInfo("Launch compiler:", compilerProc.Args)
 	_ = compilerProc.Run()
-
-	outFileFull := path.Join(session.WorkingDir, outFile)
-	defer os.Remove(outFileFull)
 
 	var compiledSource []byte
 	if compilerProc.ProcessState.ExitCode() == 0 {
-		if compiledSource, err = ioutil.ReadFile(outFileFull); err != nil {
+		if compiledSource, err = ioutil.ReadFile(session.OutObjectFilePath); err != nil {
 			callObserver.FinishWithError()
 			return nil, fmt.Errorf("Can't read compiled source: %v", err)
 		}
