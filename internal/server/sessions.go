@@ -13,7 +13,7 @@ import (
 
 // RequiredHeaderMetadata ...
 type RequiredHeaderMetadata struct {
-	*pb.HeaderMetadata
+	*pb.FileMetadata
 	common.SHA256Struct
 	UseFromSystem bool
 }
@@ -107,8 +107,8 @@ func (s *Sessions) OpenNewSession(in *pb.StartCompilationSessionRequest, session
 	for _, headerMetadata := range in.RequiredHeaders {
 		headerSHA256, _ := userInfo.HeaderSHA256Cache.GetFileSHA256(headerMetadata.FilePath, headerMetadata.MTime)
 		newSession.RequiredHeaders = append(newSession.RequiredHeaders, RequiredHeaderMetadata{
-			HeaderMetadata: headerMetadata,
-			SHA256Struct:   headerSHA256,
+			FileMetadata: headerMetadata,
+			SHA256Struct: headerSHA256,
 		})
 	}
 	s.mu.Lock()

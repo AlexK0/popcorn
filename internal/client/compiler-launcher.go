@@ -13,10 +13,10 @@ import (
 // ErrNoAvailableHosts ...
 var ErrNoAvailableHosts = errors.New("no available hosts for connection")
 
-func makeHeaderAsync(headerPath string, destMeta **pb.HeaderMetadata, wg *common.WaitGroupWithError) {
+func makeHeaderAsync(headerPath string, destMeta **pb.FileMetadata, wg *common.WaitGroupWithError) {
 	headerStat, err := os.Stat(headerPath)
 	if err == nil {
-		*destMeta = &pb.HeaderMetadata{
+		*destMeta = &pb.FileMetadata{
 			FilePath: headerPath,
 			MTime:    headerStat.ModTime().UnixNano(),
 		}
@@ -24,10 +24,10 @@ func makeHeaderAsync(headerPath string, destMeta **pb.HeaderMetadata, wg *common
 	wg.Done(err)
 }
 
-func readHeadersMeta(headers []string) ([]*pb.HeaderMetadata, error) {
+func readHeadersMeta(headers []string) ([]*pb.FileMetadata, error) {
 	wg := common.WaitGroupWithError{}
 	wg.Add(len(headers))
-	cachedHeaders := make([]*pb.HeaderMetadata, len(headers))
+	cachedHeaders := make([]*pb.FileMetadata, len(headers))
 	for i, header := range headers {
 		go makeHeaderAsync(header, &cachedHeaders[i], &wg)
 	}

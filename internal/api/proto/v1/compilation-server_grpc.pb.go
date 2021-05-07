@@ -20,8 +20,8 @@ const _ = grpc.SupportPackageIsVersion7
 type CompilationServiceClient interface {
 	// Compilation api
 	StartCompilationSession(ctx context.Context, in *StartCompilationSessionRequest, opts ...grpc.CallOption) (*StartCompilationSessionReply, error)
-	SendHeaderSHA256(ctx context.Context, in *SendHeaderSHA256Request, opts ...grpc.CallOption) (*SendHeaderSHA256Reply, error)
-	SendHeader(ctx context.Context, opts ...grpc.CallOption) (CompilationService_SendHeaderClient, error)
+	SendFileSHA256(ctx context.Context, in *SendFileSHA256Request, opts ...grpc.CallOption) (*SendFileSHA256Reply, error)
+	TransferFile(ctx context.Context, opts ...grpc.CallOption) (CompilationService_TransferFileClient, error)
 	CompileSource(ctx context.Context, in *CompileSourceRequest, opts ...grpc.CallOption) (*CompileSourceReply, error)
 	CloseSession(ctx context.Context, in *CloseSessionRequest, opts ...grpc.CallOption) (*CloseSessionReply, error)
 	// Service api
@@ -45,43 +45,43 @@ func (c *compilationServiceClient) StartCompilationSession(ctx context.Context, 
 	return out, nil
 }
 
-func (c *compilationServiceClient) SendHeaderSHA256(ctx context.Context, in *SendHeaderSHA256Request, opts ...grpc.CallOption) (*SendHeaderSHA256Reply, error) {
-	out := new(SendHeaderSHA256Reply)
-	err := c.cc.Invoke(ctx, "/popcorn.CompilationService/SendHeaderSHA256", in, out, opts...)
+func (c *compilationServiceClient) SendFileSHA256(ctx context.Context, in *SendFileSHA256Request, opts ...grpc.CallOption) (*SendFileSHA256Reply, error) {
+	out := new(SendFileSHA256Reply)
+	err := c.cc.Invoke(ctx, "/popcorn.CompilationService/SendFileSHA256", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *compilationServiceClient) SendHeader(ctx context.Context, opts ...grpc.CallOption) (CompilationService_SendHeaderClient, error) {
-	stream, err := c.cc.NewStream(ctx, &CompilationService_ServiceDesc.Streams[0], "/popcorn.CompilationService/SendHeader", opts...)
+func (c *compilationServiceClient) TransferFile(ctx context.Context, opts ...grpc.CallOption) (CompilationService_TransferFileClient, error) {
+	stream, err := c.cc.NewStream(ctx, &CompilationService_ServiceDesc.Streams[0], "/popcorn.CompilationService/TransferFile", opts...)
 	if err != nil {
 		return nil, err
 	}
-	x := &compilationServiceSendHeaderClient{stream}
+	x := &compilationServiceTransferFileClient{stream}
 	return x, nil
 }
 
-type CompilationService_SendHeaderClient interface {
-	Send(*SendHeaderRequest) error
-	CloseAndRecv() (*SendHeaderReply, error)
+type CompilationService_TransferFileClient interface {
+	Send(*TransferFileStream) error
+	CloseAndRecv() (*TransferFileReply, error)
 	grpc.ClientStream
 }
 
-type compilationServiceSendHeaderClient struct {
+type compilationServiceTransferFileClient struct {
 	grpc.ClientStream
 }
 
-func (x *compilationServiceSendHeaderClient) Send(m *SendHeaderRequest) error {
+func (x *compilationServiceTransferFileClient) Send(m *TransferFileStream) error {
 	return x.ClientStream.SendMsg(m)
 }
 
-func (x *compilationServiceSendHeaderClient) CloseAndRecv() (*SendHeaderReply, error) {
+func (x *compilationServiceTransferFileClient) CloseAndRecv() (*TransferFileReply, error) {
 	if err := x.ClientStream.CloseSend(); err != nil {
 		return nil, err
 	}
-	m := new(SendHeaderReply)
+	m := new(TransferFileReply)
 	if err := x.ClientStream.RecvMsg(m); err != nil {
 		return nil, err
 	}
@@ -121,8 +121,8 @@ func (c *compilationServiceClient) Status(ctx context.Context, in *StatusRequest
 type CompilationServiceServer interface {
 	// Compilation api
 	StartCompilationSession(context.Context, *StartCompilationSessionRequest) (*StartCompilationSessionReply, error)
-	SendHeaderSHA256(context.Context, *SendHeaderSHA256Request) (*SendHeaderSHA256Reply, error)
-	SendHeader(CompilationService_SendHeaderServer) error
+	SendFileSHA256(context.Context, *SendFileSHA256Request) (*SendFileSHA256Reply, error)
+	TransferFile(CompilationService_TransferFileServer) error
 	CompileSource(context.Context, *CompileSourceRequest) (*CompileSourceReply, error)
 	CloseSession(context.Context, *CloseSessionRequest) (*CloseSessionReply, error)
 	// Service api
@@ -137,11 +137,11 @@ type UnimplementedCompilationServiceServer struct {
 func (UnimplementedCompilationServiceServer) StartCompilationSession(context.Context, *StartCompilationSessionRequest) (*StartCompilationSessionReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method StartCompilationSession not implemented")
 }
-func (UnimplementedCompilationServiceServer) SendHeaderSHA256(context.Context, *SendHeaderSHA256Request) (*SendHeaderSHA256Reply, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method SendHeaderSHA256 not implemented")
+func (UnimplementedCompilationServiceServer) SendFileSHA256(context.Context, *SendFileSHA256Request) (*SendFileSHA256Reply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SendFileSHA256 not implemented")
 }
-func (UnimplementedCompilationServiceServer) SendHeader(CompilationService_SendHeaderServer) error {
-	return status.Errorf(codes.Unimplemented, "method SendHeader not implemented")
+func (UnimplementedCompilationServiceServer) TransferFile(CompilationService_TransferFileServer) error {
+	return status.Errorf(codes.Unimplemented, "method TransferFile not implemented")
 }
 func (UnimplementedCompilationServiceServer) CompileSource(context.Context, *CompileSourceRequest) (*CompileSourceReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CompileSource not implemented")
@@ -183,44 +183,44 @@ func _CompilationService_StartCompilationSession_Handler(srv interface{}, ctx co
 	return interceptor(ctx, in, info, handler)
 }
 
-func _CompilationService_SendHeaderSHA256_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SendHeaderSHA256Request)
+func _CompilationService_SendFileSHA256_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SendFileSHA256Request)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(CompilationServiceServer).SendHeaderSHA256(ctx, in)
+		return srv.(CompilationServiceServer).SendFileSHA256(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/popcorn.CompilationService/SendHeaderSHA256",
+		FullMethod: "/popcorn.CompilationService/SendFileSHA256",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(CompilationServiceServer).SendHeaderSHA256(ctx, req.(*SendHeaderSHA256Request))
+		return srv.(CompilationServiceServer).SendFileSHA256(ctx, req.(*SendFileSHA256Request))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _CompilationService_SendHeader_Handler(srv interface{}, stream grpc.ServerStream) error {
-	return srv.(CompilationServiceServer).SendHeader(&compilationServiceSendHeaderServer{stream})
+func _CompilationService_TransferFile_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(CompilationServiceServer).TransferFile(&compilationServiceTransferFileServer{stream})
 }
 
-type CompilationService_SendHeaderServer interface {
-	SendAndClose(*SendHeaderReply) error
-	Recv() (*SendHeaderRequest, error)
+type CompilationService_TransferFileServer interface {
+	SendAndClose(*TransferFileReply) error
+	Recv() (*TransferFileStream, error)
 	grpc.ServerStream
 }
 
-type compilationServiceSendHeaderServer struct {
+type compilationServiceTransferFileServer struct {
 	grpc.ServerStream
 }
 
-func (x *compilationServiceSendHeaderServer) SendAndClose(m *SendHeaderReply) error {
+func (x *compilationServiceTransferFileServer) SendAndClose(m *TransferFileReply) error {
 	return x.ServerStream.SendMsg(m)
 }
 
-func (x *compilationServiceSendHeaderServer) Recv() (*SendHeaderRequest, error) {
-	m := new(SendHeaderRequest)
+func (x *compilationServiceTransferFileServer) Recv() (*TransferFileStream, error) {
+	m := new(TransferFileStream)
 	if err := x.ServerStream.RecvMsg(m); err != nil {
 		return nil, err
 	}
@@ -293,8 +293,8 @@ var CompilationService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _CompilationService_StartCompilationSession_Handler,
 		},
 		{
-			MethodName: "SendHeaderSHA256",
-			Handler:    _CompilationService_SendHeaderSHA256_Handler,
+			MethodName: "SendFileSHA256",
+			Handler:    _CompilationService_SendFileSHA256_Handler,
 		},
 		{
 			MethodName: "CompileSource",
@@ -311,8 +311,8 @@ var CompilationService_ServiceDesc = grpc.ServiceDesc{
 	},
 	Streams: []grpc.StreamDesc{
 		{
-			StreamName:    "SendHeader",
-			Handler:       _CompilationService_SendHeader_Handler,
+			StreamName:    "TransferFile",
+			Handler:       _CompilationService_TransferFile_Handler,
 			ClientStreams: true,
 		},
 	},

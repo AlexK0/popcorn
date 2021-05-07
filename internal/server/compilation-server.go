@@ -76,9 +76,9 @@ func (s *CompilationServer) StartCompilationSession(ctx context.Context, in *pb.
 	}, nil
 }
 
-// SendHeaderSHA256 ...
-func (s *CompilationServer) SendHeaderSHA256(ctx context.Context, in *pb.SendHeaderSHA256Request) (*pb.SendHeaderSHA256Reply, error) {
-	callObserver := s.Stats.SendHeaderSHA256.StartRPCCall()
+// SendFileSHA256 ...
+func (s *CompilationServer) SendFileSHA256(ctx context.Context, in *pb.SendFileSHA256Request) (*pb.SendFileSHA256Reply, error) {
+	callObserver := s.Stats.SendFileSHA256.StartRPCCall()
 
 	session := s.UserSessions.GetSession(in.SessionID)
 	if session == nil {
@@ -92,7 +92,7 @@ func (s *CompilationServer) SendHeaderSHA256(ctx context.Context, in *pb.SendHea
 	session.UserInfo.HeaderSHA256Cache.SetFileSHA256(headerMetadata.FilePath, headerMetadata.MTime, headerMetadata.SHA256Struct)
 	if systemSHA256 := s.SystemHeaders.GetSystemHeaderSHA256(headerMetadata.FilePath); systemSHA256 == headerMetadata.SHA256Struct {
 		headerMetadata.UseFromSystem = true
-		return &pb.SendHeaderSHA256Reply{}, nil
+		return &pb.SendFileSHA256Reply{}, nil
 	}
 
 	_, headerPathInWorkingDir := session.GetFilePathInWorkingDir(headerMetadata.FilePath)
@@ -100,21 +100,21 @@ func (s *CompilationServer) SendHeaderSHA256(ctx context.Context, in *pb.SendHea
 	// TODO Why 6 seconds?
 	for time.Since(start) < 6*time.Second {
 		if s.HeaderFileCache.CreateLinkFromCache(headerMetadata.FilePath, headerMetadata.SHA256Struct, headerPathInWorkingDir) {
-			return &pb.SendHeaderSHA256Reply{}, nil
+			return &pb.SendFileSHA256Reply{}, nil
 		}
 		if s.UploadingHeaders.StartHeaderSending(headerMetadata.FilePath, headerMetadata.SHA256Struct) {
-			return &pb.SendHeaderSHA256Reply{FullCopyRequired: true}, nil
+			return &pb.SendFileSHA256Reply{FullCopyRequired: true}, nil
 		}
 		// TODO Why 100 milliseconds?
 		time.Sleep(100 * time.Millisecond)
 	}
 
 	s.UploadingHeaders.ForceStartHeaderSending(headerMetadata.FilePath, headerMetadata.SHA256Struct)
-	return &pb.SendHeaderSHA256Reply{FullCopyRequired: true}, nil
+	return &pb.SendFileSHA256Reply{FullCopyRequired: true}, nil
 }
 
-func saveFileFromStream(file *os.File, stream pb.CompilationService_SendHeaderServer) (int64, error) {
-	headerFileSize := int64(0)
+func saveFileFromStream(file *os.File, stream pb.CompilationService_TransferFileServer) (int64, error) {
+	fileSize := int64(0)
 	for {
 		request, err := stream.Recv()
 		if err == io.EOF {
@@ -123,21 +123,21 @@ func saveFileFromStream(file *os.File, stream pb.CompilationService_SendHeaderSe
 		if err != nil {
 			return 0, fmt.Errorf("Unexpected error on receiving header chunk: %v", err)
 		}
-		headerChunk := request.GetHeaderBodyChunk()
-		if headerChunk == nil {
+		fileChunk := request.GetFileBodyChunk()
+		if fileChunk == nil {
 			return 0, fmt.Errorf("Header body chunk is expected")
 		}
-		if _, err = file.Write(headerChunk); err != nil {
+		if _, err = file.Write(fileChunk); err != nil {
 			return 0, fmt.Errorf("Can't write header chunk: %v", err)
 		}
-		headerFileSize += int64(len(headerChunk))
+		fileSize += int64(len(fileChunk))
 	}
-	return headerFileSize, nil
+	return fileSize, nil
 }
 
-// SendHeader ...
-func (s *CompilationServer) SendHeader(stream pb.CompilationService_SendHeaderServer) error {
-	callObserver := s.Stats.SendHeader.StartRPCCall()
+// TransferFile ...
+func (s *CompilationServer) TransferFile(stream pb.CompilationService_TransferFileServer) error {
+	callObserver := s.Stats.TransferFile.StartRPCCall()
 
 	request, err := stream.Recv()
 	if err != nil {
@@ -145,8 +145,8 @@ func (s *CompilationServer) SendHeader(stream pb.CompilationService_SendHeaderSe
 		return fmt.Errorf("Unexpected error: %v", err)
 	}
 
-	defer stream.SendAndClose(&pb.SendHeaderReply{})
-	metadata := request.GetMetadata()
+	defer stream.SendAndClose(&pb.TransferFileReply{})
+	metadata := request.GetHeader()
 	if metadata == nil {
 		callObserver.FinishWithError()
 		return fmt.Errorf("Metadata af first chunk is expected")

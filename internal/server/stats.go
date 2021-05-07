@@ -76,8 +76,8 @@ type CompilationServerStats struct {
 	SendingHeadersReceived       AtomicStat
 
 	StartCompilationSession RPCCallStats
-	SendHeaderSHA256        RPCCallStats
-	SendHeader              RPCCallStats
+	SendFileSHA256          RPCCallStats
+	TransferFile            RPCCallStats
 	CompileSource           RPCCallStats
 	CloseSession            RPCCallStats
 
@@ -138,8 +138,8 @@ func (cs *CompilationServerStats) feedBufferWithStats(compilationServer *Compila
 	cs.writeAtomicStat("sending_headers.double_received", &cs.SendingHeadersDoubleReceived)
 
 	cs.writeRPCCallStat("start_compilation_session", &cs.StartCompilationSession)
-	cs.writeRPCCallStat("send_header_sha256", &cs.SendHeaderSHA256)
-	cs.writeRPCCallStat("send_header", &cs.SendHeader)
+	cs.writeRPCCallStat("send_file_sha256", &cs.SendFileSHA256)
+	cs.writeRPCCallStat("transfer_file", &cs.TransferFile)
 	cs.writeRPCCallStat("compile_source", &cs.CompileSource)
 	cs.writeRPCCallStat("close_session", &cs.CloseSession)
 

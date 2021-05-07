@@ -55,9 +55,9 @@ func (compiler *RemoteCompiler) readHeaderAndSendSHA256OrBody(path string, mtime
 		wg.Done(err)
 		return
 	}
-	reply, err := compiler.grpcClient.Client.SendHeaderSHA256(
+	reply, err := compiler.grpcClient.Client.SendFileSHA256(
 		compiler.grpcClient.CallContext,
-		&pb.SendHeaderSHA256Request{
+		&pb.SendFileSHA256Request{
 			SessionID:    compiler.sessionID,
 			HeaderIndex:  index,
 			HeaderSHA256: common.SHA256StructToSHA256Message(headerSha256),
@@ -72,27 +72,27 @@ func (compiler *RemoteCompiler) readHeaderAndSendSHA256OrBody(path string, mtime
 func (compiler *RemoteCompiler) readHeaderAndSend(path string, index int32, wg *common.WaitGroupWithError) {
 	file, err := os.Open(path)
 	if err != nil {
-		wg.Done(fmt.Errorf("Can't open header %q for sending: %v", path, err))
+		wg.Done(fmt.Errorf("Can't open file %q for sending: %v", path, err))
 		return
 	}
 	defer file.Close()
 
-	stream, err := compiler.grpcClient.Client.SendHeader(compiler.grpcClient.CallContext)
+	stream, err := compiler.grpcClient.Client.TransferFile(compiler.grpcClient.CallContext)
 	if err != nil {
 		wg.Done(fmt.Errorf("Can't open grpc stream: %v", err))
 		return
 	}
 
-	err = stream.Send(&pb.SendHeaderRequest{
-		Chunk: &pb.SendHeaderRequest_Metadata{
-			Metadata: &pb.SendHeaderRequest_HeaderMetadata{
+	err = stream.Send(&pb.TransferFileStream{
+		Chunk: &pb.TransferFileStream_Header{
+			Header: &pb.TransferFileStream_StreamHeader{
 				SessionID:   compiler.sessionID,
 				HeaderIndex: index,
 			},
 		},
 	})
 	if err != nil {
-		wg.Done(fmt.Errorf("Can't send header metadata: %v", err))
+		wg.Done(fmt.Errorf("Can't send file metadata: %v", err))
 		return
 	}
 
@@ -103,12 +103,12 @@ func (compiler *RemoteCompiler) readHeaderAndSend(path string, index int32, wg *
 			break
 		}
 		if err != nil {
-			wg.Done(fmt.Errorf("Can't read header %q: %v", path, err))
+			wg.Done(fmt.Errorf("Can't read file %q: %v", path, err))
 			return
 		}
-		err = stream.Send(&pb.SendHeaderRequest{
-			Chunk: &pb.SendHeaderRequest_HeaderBodyChunk{
-				HeaderBodyChunk: buffer[:n],
+		err = stream.Send(&pb.TransferFileStream{
+			Chunk: &pb.TransferFileStream_FileBodyChunk{
+				FileBodyChunk: buffer[:n],
 			},
 		})
 		if err == io.EOF {
@@ -117,14 +117,14 @@ func (compiler *RemoteCompiler) readHeaderAndSend(path string, index int32, wg *
 	}
 
 	if _, err = stream.CloseAndRecv(); err != nil {
-		wg.Done(fmt.Errorf("Can't send header: %v", err))
+		wg.Done(fmt.Errorf("Can't send file: %v", err))
 	} else {
 		wg.Done(nil)
 	}
 }
 
 // SetupEnvironment ...
-func (compiler *RemoteCompiler) SetupEnvironment(headers []*pb.HeaderMetadata) error {
+func (compiler *RemoteCompiler) SetupEnvironment(headers []*pb.FileMetadata) error {
 	clientCacheStream, err := compiler.grpcClient.Client.StartCompilationSession(
 		compiler.grpcClient.CallContext,
 		&pb.StartCompilationSessionRequest{
