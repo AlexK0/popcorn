@@ -39,10 +39,19 @@ message StartCompilationSessionRequest {
     bool UseObjectCache = 7;
 }
 
+enum RequiredStatus {
+    FULL_COPY_REQUIRED = 0;
+    SHA256_REQUIRED = 1;
+}
+
+message RequiredFile {
+    int32 HeaderIndex = 1;
+    RequiredStatus Status = 2;
+}
+
 message StartCompilationSessionReply {
     uint64 SessionID = 1;
-    repeated int32 MissedHeadersSHA256 = 2;
-    repeated int32 MissedHeadersFullCopy = 3;
+    repeated RequiredFile RequiredFiles = 2;
 }
 
 message TransferFileIn {

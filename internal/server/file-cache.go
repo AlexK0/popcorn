@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path"
-	"strconv"
 	"sync"
 	"sync/atomic"
 
@@ -45,15 +44,15 @@ type FileCache struct {
 	purgedElements int64
 }
 
-const dirShards = 10
+const DIR_SHARDS = 16
 
 // MakeFileCache ...
 func MakeFileCache(cacheDir string, cacheLimitBytes int64) (*FileCache, error) {
 	if err := os.MkdirAll(cacheDir, os.ModePerm); err != nil {
 		return nil, err
 	}
-	for i := 0; i < dirShards; i++ {
-		dir := path.Join(cacheDir, strconv.Itoa(i))
+	for i := 0; i < DIR_SHARDS; i++ {
+		dir := path.Join(cacheDir, fmt.Sprintf("%X", i))
 		if err := os.Mkdir(dir, os.ModePerm); err != nil {
 			return nil, err
 		}
@@ -106,7 +105,7 @@ func (cache *FileCache) CreateLinkFromCache(filePath string, fileSHA256key commo
 func (cache *FileCache) SaveFileToCacheExtra(srcPath string, filePath string, key common.SHA256Struct, extraKey common.SHA256Struct, fileSize int64) (bool, error) {
 	uniqueID := atomic.AddUint64(&cache.uniqueCounter, 1) - 1
 	fileName := path.Base(filePath)
-	cachedFileName := fmt.Sprintf("%d/%s.%X", uniqueID%dirShards, fileName, uniqueID)
+	cachedFileName := fmt.Sprintf("%X/%s.%X", uniqueID%DIR_SHARDS, fileName, uniqueID)
 	cachedFilePath := path.Join(cache.cacheDir, cachedFileName)
 
 	if err := os.Link(srcPath, cachedFilePath); err != nil {

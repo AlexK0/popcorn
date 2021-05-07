@@ -45,15 +45,13 @@ func (s *CompilationServer) StartCompilationSession(ctx context.Context, in *pb.
 		return nil, callObserver.FinishWithError(fmt.Errorf("Can't create session working directory: %v", err))
 	}
 
-	missedHeadersSHA256 := make([]int32, 0, len(in.RequiredHeaders))
-	missedHeadersFullCopy := make([]int32, 0, len(in.RequiredHeaders))
+	requiredFiles := make([]*pb.RequiredFile, 0, 1+len(in.RequiredHeaders))
 	for index, requiredHeader := range session.RequiredHeaders {
-		if requiredHeader.IsEmpty() {
-			missedHeadersSHA256 = append(missedHeadersSHA256, int32(index))
+		if requiredHeader.SHA256Struct.IsEmpty() {
+			requiredFiles = append(requiredFiles, &pb.RequiredFile{HeaderIndex: int32(index), Status: pb.RequiredStatus_SHA256_REQUIRED})
 			continue
 		}
-		systemSHA256, systemSize := s.SystemHeaders.GetSystemHeaderSHA256AndSize(requiredHeader.FilePath)
-		if systemSize == requiredHeader.FileSize && systemSHA256 == requiredHeader.SHA256Struct {
+		if s.SystemHeaders.IsSystemHeader(requiredHeader.FilePath, requiredHeader.FileSize, requiredHeader.SHA256Struct) {
 			requiredHeader.UseFromSystem = true
 			continue
 		}
@@ -61,17 +59,12 @@ func (s *CompilationServer) StartCompilationSession(ctx context.Context, in *pb.
 		if s.HeaderFileCache.CreateLinkFromCache(requiredHeader.FilePath, requiredHeader.SHA256Struct, headerPathInWorkingDir) {
 			continue
 		}
-		if s.UploadingHeaders.StartHeaderSending(requiredHeader.FilePath, requiredHeader.SHA256Struct) {
-			missedHeadersFullCopy = append(missedHeadersFullCopy, int32(index))
-		} else {
-			missedHeadersSHA256 = append(missedHeadersSHA256, int32(index))
-		}
+		requiredFiles = append(requiredFiles, &pb.RequiredFile{HeaderIndex: int32(index), Status: pb.RequiredStatus_FULL_COPY_REQUIRED})
 	}
 
 	return &pb.StartCompilationSessionReply{
-		SessionID:             sessionID,
-		MissedHeadersSHA256:   missedHeadersSHA256,
-		MissedHeadersFullCopy: missedHeadersFullCopy,
+		SessionID:     sessionID,
+		RequiredFiles: requiredFiles,
 	}, callObserver.Finish()
 }
 
@@ -119,8 +112,7 @@ func (s *CompilationServer) TransferFile(stream pb.CompilationService_TransferFi
 	if metadata.FileSHA256 != nil {
 		fileMetadata.SHA256Struct = common.SHA256MessageToSHA256Struct(metadata.FileSHA256)
 		session.UserInfo.HeaderSHA256Cache.SetFileSHA256(fileMetadata.FilePath, fileMetadata.MTime, fileMetadata.FileSize, fileMetadata.SHA256Struct)
-		systemSHA256, systemSize := s.SystemHeaders.GetSystemHeaderSHA256AndSize(fileMetadata.FilePath)
-		if systemSize == fileMetadata.FileSize && systemSHA256 == fileMetadata.SHA256Struct {
+		if s.SystemHeaders.IsSystemHeader(fileMetadata.FilePath, fileMetadata.FileSize, fileMetadata.SHA256Struct) {
 			fileMetadata.UseFromSystem = true
 			_ = stream.Send(&pb.TransferFileOut{FullCopyRequired: false})
 			return callObserver.Finish()
@@ -129,23 +121,20 @@ func (s *CompilationServer) TransferFile(stream pb.CompilationService_TransferFi
 		return callObserver.FinishWithError(fmt.Errorf("SHA256 is required for %q", fileMetadata.FilePath))
 	}
 
-	defer s.UploadingHeaders.FinishHeaderSending(fileMetadata.FilePath, fileMetadata.SHA256Struct)
 	_, headerPathInWorkingDir := session.GetFilePathInWorkingDir(fileMetadata.FilePath)
-	if s.HeaderFileCache.CreateLinkFromCache(fileMetadata.FilePath, fileMetadata.SHA256Struct, headerPathInWorkingDir) {
-		_ = stream.Send(&pb.TransferFileOut{FullCopyRequired: false})
-		return callObserver.Finish()
-	}
-
-	useForceStart := true
 	start := time.Now()
-	// TODO Why 6 seconds?
-	for time.Since(start) < 6*time.Second {
+	for {
 		if s.HeaderFileCache.CreateLinkFromCache(fileMetadata.FilePath, fileMetadata.SHA256Struct, headerPathInWorkingDir) {
 			_ = stream.Send(&pb.TransferFileOut{FullCopyRequired: false})
 			return callObserver.Finish()
 		}
 		if s.UploadingHeaders.StartHeaderSending(fileMetadata.FilePath, fileMetadata.SHA256Struct) {
-			useForceStart = false
+			_ = stream.Send(&pb.TransferFileOut{FullCopyRequired: true})
+			break
+		}
+		// TODO Why 6 seconds?
+		if time.Since(start) > 6*time.Second {
+			s.UploadingHeaders.ForceStartHeaderSending(fileMetadata.FilePath, fileMetadata.SHA256Struct)
 			_ = stream.Send(&pb.TransferFileOut{FullCopyRequired: true})
 			break
 		}
@@ -153,11 +142,7 @@ func (s *CompilationServer) TransferFile(stream pb.CompilationService_TransferFi
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	if useForceStart {
-		s.UploadingHeaders.ForceStartHeaderSending(fileMetadata.FilePath, fileMetadata.SHA256Struct)
-		_ = stream.Send(&pb.TransferFileOut{FullCopyRequired: true})
-	}
-
+	defer s.UploadingHeaders.FinishHeaderSending(fileMetadata.FilePath, fileMetadata.SHA256Struct)
 	headerFileTmp, err := common.OpenTempFile(headerPathInWorkingDir)
 	if err != nil {
 		return callObserver.FinishWithError(fmt.Errorf("Can't open temp file for saving header: %v", err))

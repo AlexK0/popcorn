@@ -142,20 +142,13 @@ func (compiler *RemoteCompiler) SetupEnvironment(headers []*pb.FileMetadata) err
 
 	sem := make(chan int, 8)
 	wg := common.WaitGroupWithError{}
-	wg.Add(len(clientCacheStream.MissedHeadersSHA256) + len(clientCacheStream.MissedHeadersFullCopy))
-	for _, index := range clientCacheStream.MissedHeadersSHA256 {
+	wg.Add(len(clientCacheStream.RequiredFiles))
+	for _, requiredFile := range clientCacheStream.RequiredFiles {
 		sem <- 1
-		go func(index int32) {
-			compiler.transferFile(headers[index].FilePath, index, true, &wg)
+		go func(index int32, sendSHA256 bool) {
+			compiler.transferFile(headers[index].FilePath, index, sendSHA256, &wg)
 			<-sem
-		}(index)
-	}
-	for _, index := range clientCacheStream.MissedHeadersFullCopy {
-		sem <- 1
-		go func(index int32) {
-			compiler.transferFile(headers[index].FilePath, index, false, &wg)
-			<-sem
-		}(index)
+		}(requiredFile.HeaderIndex, requiredFile.Status == pb.RequiredStatus_SHA256_REQUIRED)
 	}
 	return wg.Wait()
 }
