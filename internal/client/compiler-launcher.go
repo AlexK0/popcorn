@@ -19,6 +19,7 @@ func makeHeaderAsync(headerPath string, destMeta **pb.FileMetadata, wg *common.W
 		*destMeta = &pb.FileMetadata{
 			FilePath: headerPath,
 			MTime:    headerStat.ModTime().UnixNano(),
+			FileSize: headerStat.Size(),
 		}
 	}
 	wg.Done(err)

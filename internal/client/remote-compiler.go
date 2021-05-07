@@ -49,33 +49,38 @@ func MakeRemoteCompiler(localCompiler *LocalCompiler, serverHostPort string) (*R
 	}, nil
 }
 
-func (compiler *RemoteCompiler) readHeaderAndSendSHA256OrBody(path string, mtime int64, index int32, wg *common.WaitGroupWithError) {
-	headerSha256, err := common.GetFileSHA256(path)
+func transferFileByChunks(path string, stream pb.CompilationService_TransferFileClient) error {
+	file, err := os.Open(path)
 	if err != nil {
-		wg.Done(err)
-		return
+		return fmt.Errorf("Can't open file %q for sending: %v", path, err)
 	}
-	reply, err := compiler.grpcClient.Client.SendFileSHA256(
-		compiler.grpcClient.CallContext,
-		&pb.SendFileSHA256Request{
-			SessionID:    compiler.sessionID,
-			HeaderIndex:  index,
-			HeaderSHA256: common.SHA256StructToSHA256Message(headerSha256),
-		})
-	if err == nil && reply.FullCopyRequired {
-		compiler.readHeaderAndSend(path, index, wg)
-	} else {
-		wg.Done(err)
+	defer file.Close()
+
+	var buffer [256 * 1024]byte
+	for {
+		n, err := file.Read(buffer[:])
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("Can't read file %q: %v", path, err)
+		}
+		if err = stream.Send(&pb.TransferFileIn{Chunk: &pb.TransferFileIn_FileBodyChunk{FileBodyChunk: buffer[:n]}}); err != nil {
+			return fmt.Errorf("Can't transfer file %q: %v", path, err)
+		}
 	}
 }
 
-func (compiler *RemoteCompiler) readHeaderAndSend(path string, index int32, wg *common.WaitGroupWithError) {
-	file, err := os.Open(path)
-	if err != nil {
-		wg.Done(fmt.Errorf("Can't open file %q for sending: %v", path, err))
-		return
+func (compiler *RemoteCompiler) transferFile(path string, index int32, sha256Required bool, wg *common.WaitGroupWithError) {
+	var fileSHA256Message *pb.SHA256Message = nil
+	if sha256Required {
+		fileSHA256, err := common.GetFileSHA256(path)
+		if err != nil {
+			wg.Done(fmt.Errorf("Can't calculate SHA256 for file %q: %v", path, err))
+			return
+		}
+		fileSHA256Message = common.SHA256StructToSHA256Message(fileSHA256)
 	}
-	defer file.Close()
 
 	stream, err := compiler.grpcClient.Client.TransferFile(compiler.grpcClient.CallContext)
 	if err != nil {
@@ -83,11 +88,12 @@ func (compiler *RemoteCompiler) readHeaderAndSend(path string, index int32, wg *
 		return
 	}
 
-	err = stream.Send(&pb.TransferFileStream{
-		Chunk: &pb.TransferFileStream_Header{
-			Header: &pb.TransferFileStream_StreamHeader{
-				SessionID:   compiler.sessionID,
-				HeaderIndex: index,
+	err = stream.Send(&pb.TransferFileIn{
+		Chunk: &pb.TransferFileIn_Header{
+			Header: &pb.TransferFileIn_StreamHeader{
+				SessionID:  compiler.sessionID,
+				FileIndex:  index,
+				FileSHA256: fileSHA256Message,
 			},
 		},
 	})
@@ -96,34 +102,26 @@ func (compiler *RemoteCompiler) readHeaderAndSend(path string, index int32, wg *
 		return
 	}
 
-	var buffer [256 * 1024]byte
-	for {
-		n, err := file.Read(buffer[:])
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			wg.Done(fmt.Errorf("Can't read file %q: %v", path, err))
+	reply, err := stream.Recv()
+	if err != nil {
+		wg.Done(fmt.Errorf("Can't get transfer reply: %v", err))
+		return
+	}
+
+	if reply.FullCopyRequired {
+		if err = transferFileByChunks(path, stream); err != nil {
+			wg.Done(err)
 			return
-		}
-		err = stream.Send(&pb.TransferFileStream{
-			Chunk: &pb.TransferFileStream_FileBodyChunk{
-				FileBodyChunk: buffer[:n],
-			},
-		})
-		if err == io.EOF {
-			break
 		}
 	}
 
-	if _, err = stream.CloseAndRecv(); err != nil {
-		wg.Done(fmt.Errorf("Can't send file: %v", err))
+	if err = stream.CloseSend(); err != nil {
+		wg.Done(fmt.Errorf("Error on file transfering: %v", err))
 	} else {
 		wg.Done(nil)
 	}
 }
 
-// SetupEnvironment ...
 func (compiler *RemoteCompiler) SetupEnvironment(headers []*pb.FileMetadata) error {
 	clientCacheStream, err := compiler.grpcClient.Client.StartCompilationSession(
 		compiler.grpcClient.CallContext,
@@ -148,21 +146,20 @@ func (compiler *RemoteCompiler) SetupEnvironment(headers []*pb.FileMetadata) err
 	for _, index := range clientCacheStream.MissedHeadersSHA256 {
 		sem <- 1
 		go func(index int32) {
-			compiler.readHeaderAndSendSHA256OrBody(headers[index].FilePath, headers[index].MTime, index, &wg)
+			compiler.transferFile(headers[index].FilePath, index, true, &wg)
 			<-sem
 		}(index)
 	}
 	for _, index := range clientCacheStream.MissedHeadersFullCopy {
 		sem <- 1
 		go func(index int32) {
-			compiler.readHeaderAndSend(headers[index].FilePath, index, &wg)
+			compiler.transferFile(headers[index].FilePath, index, false, &wg)
 			<-sem
 		}(index)
 	}
 	return wg.Wait()
 }
 
-// CompileSource ...
 func (compiler *RemoteCompiler) CompileSource() (retCode int, stdout []byte, stderr []byte, err error) {
 	sourceBody, err := ioutil.ReadFile(compiler.inFile)
 	if err != nil {

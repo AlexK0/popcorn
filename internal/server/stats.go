@@ -60,23 +60,23 @@ func (c *RPCCallStats) StartRPCCall() RPCCallObserver {
 }
 
 // Finish ...
-func (o RPCCallObserver) Finish() {
+func (o RPCCallObserver) Finish() error {
 	o.stat.ProcessingTime.AddDuration(time.Since(o.start))
+	return nil
 }
 
 // FinishWithError ...
-func (o RPCCallObserver) FinishWithError() {
+func (o RPCCallObserver) FinishWithError(err error) error {
 	o.stat.Errors.Increment()
 	o.stat.ProcessingTime.AddDuration(time.Since(o.start))
+	return err
 }
 
 // CompilationServerStats ...
 type CompilationServerStats struct {
-	SendingHeadersDoubleReceived AtomicStat
-	SendingHeadersReceived       AtomicStat
+	SendingHeadersReceived AtomicStat
 
 	StartCompilationSession RPCCallStats
-	SendFileSHA256          RPCCallStats
 	TransferFile            RPCCallStats
 	CompileSource           RPCCallStats
 	CloseSession            RPCCallStats
@@ -135,10 +135,8 @@ func (cs *CompilationServerStats) feedBufferWithStats(compilationServer *Compila
 
 	cs.writeStat("sending_headers.in_progress", compilationServer.UploadingHeaders.SendingHeadersCount())
 	cs.writeAtomicStat("sending_headers.received", &cs.SendingHeadersReceived)
-	cs.writeAtomicStat("sending_headers.double_received", &cs.SendingHeadersDoubleReceived)
 
 	cs.writeRPCCallStat("start_compilation_session", &cs.StartCompilationSession)
-	cs.writeRPCCallStat("send_file_sha256", &cs.SendFileSHA256)
 	cs.writeRPCCallStat("transfer_file", &cs.TransferFile)
 	cs.writeRPCCallStat("compile_source", &cs.CompileSource)
 	cs.writeRPCCallStat("close_session", &cs.CloseSession)

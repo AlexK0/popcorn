@@ -8,8 +8,7 @@ package popcorn;
 service CompilationService {
     // Compilation api
     rpc StartCompilationSession(StartCompilationSessionRequest) returns (StartCompilationSessionReply) {}
-    rpc SendFileSHA256(SendFileSHA256Request) returns (SendFileSHA256Reply) {}
-    rpc TransferFile(stream TransferFileStream) returns (TransferFileReply) {}
+    rpc TransferFile(stream TransferFileIn) returns (stream TransferFileOut) {}
     rpc CompileSource (CompileSourceRequest) returns (CompileSourceReply) {}
     rpc CloseSession(CloseSessionRequest) returns (CloseSessionReply) {}
 
@@ -27,6 +26,7 @@ message SHA256Message {
 message FileMetadata {
     string FilePath = 1;
     int64 MTime = 2;
+    int64 FileSize = 3;
 }
 
 message StartCompilationSessionRequest {
@@ -45,20 +45,11 @@ message StartCompilationSessionReply {
     repeated int32 MissedHeadersFullCopy = 3;
 }
 
-message SendFileSHA256Request {
-    uint64 SessionID = 1;
-    int32 HeaderIndex = 2;
-    SHA256Message HeaderSHA256 = 3;
-}
-
-message SendFileSHA256Reply {
-    bool FullCopyRequired = 1;
-}
-
-message TransferFileStream {
+message TransferFileIn {
     message StreamHeader {
         uint64 SessionID = 1;
-        int32 HeaderIndex = 2;
+        int32 FileIndex = 2;
+        SHA256Message FileSHA256 = 3;
     }
     oneof Chunk {
         StreamHeader Header = 1;
@@ -66,7 +57,8 @@ message TransferFileStream {
     }
 }
 
-message TransferFileReply {
+message TransferFileOut {
+    bool FullCopyRequired = 1;
 }
 
 message CompileSourceRequest {

@@ -20,26 +20,27 @@ func MakeSystemHeaderCache() *SystemHeaderCache {
 }
 
 // GetSystemHeaderSHA256 ...
-func (systemHeaderCache *SystemHeaderCache) GetSystemHeaderSHA256(headerPath string) common.SHA256Struct {
+func (systemHeaderCache *SystemHeaderCache) GetSystemHeaderSHA256AndSize(headerPath string) (common.SHA256Struct, int64) {
 	if !strings.HasPrefix(headerPath, "/usr/") {
-		return common.SHA256Struct{}
+		return common.SHA256Struct{}, 0
 	}
 
 	info, err := os.Stat(headerPath)
 	if err != nil {
-		return common.SHA256Struct{}
+		return common.SHA256Struct{}, 0
 	}
 
 	mtime := info.ModTime().UnixNano()
-	if sha256sum, ok := systemHeaderCache.systemHeaders.GetFileSHA256(headerPath, mtime); ok {
-		return sha256sum
+	fileSize := info.Size()
+	if sha256sum, ok := systemHeaderCache.systemHeaders.GetFileSHA256(headerPath, mtime, fileSize); ok {
+		return sha256sum, fileSize
 	}
 
 	sha256sum, err := common.GetFileSHA256(headerPath)
 	if err == nil {
-		systemHeaderCache.systemHeaders.SetFileSHA256(headerPath, mtime, sha256sum)
+		systemHeaderCache.systemHeaders.SetFileSHA256(headerPath, mtime, fileSize, sha256sum)
 	}
-	return sha256sum
+	return sha256sum, fileSize
 }
 
 // GetSystemHeadersCount ...

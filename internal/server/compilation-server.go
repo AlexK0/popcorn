@@ -42,11 +42,9 @@ func (s *CompilationServer) StartCompilationSession(ctx context.Context, in *pb.
 
 	if err := os.MkdirAll(session.WorkingDir, os.ModePerm); err != nil {
 		s.UserSessions.CloseSession(sessionID)
-		callObserver.FinishWithError()
-		return nil, fmt.Errorf("Can't create session working directory: %v", err)
+		return nil, callObserver.FinishWithError(fmt.Errorf("Can't create session working directory: %v", err))
 	}
 
-	defer callObserver.Finish()
 	missedHeadersSHA256 := make([]int32, 0, len(in.RequiredHeaders))
 	missedHeadersFullCopy := make([]int32, 0, len(in.RequiredHeaders))
 	for index, requiredHeader := range session.RequiredHeaders {
@@ -54,7 +52,8 @@ func (s *CompilationServer) StartCompilationSession(ctx context.Context, in *pb.
 			missedHeadersSHA256 = append(missedHeadersSHA256, int32(index))
 			continue
 		}
-		if systemSHA256 := s.SystemHeaders.GetSystemHeaderSHA256(requiredHeader.FilePath); systemSHA256 == requiredHeader.SHA256Struct {
+		systemSHA256, systemSize := s.SystemHeaders.GetSystemHeaderSHA256AndSize(requiredHeader.FilePath)
+		if systemSize == requiredHeader.FileSize && systemSHA256 == requiredHeader.SHA256Struct {
 			requiredHeader.UseFromSystem = true
 			continue
 		}
@@ -73,44 +72,7 @@ func (s *CompilationServer) StartCompilationSession(ctx context.Context, in *pb.
 		SessionID:             sessionID,
 		MissedHeadersSHA256:   missedHeadersSHA256,
 		MissedHeadersFullCopy: missedHeadersFullCopy,
-	}, nil
-}
-
-// SendFileSHA256 ...
-func (s *CompilationServer) SendFileSHA256(ctx context.Context, in *pb.SendFileSHA256Request) (*pb.SendFileSHA256Reply, error) {
-	callObserver := s.Stats.SendFileSHA256.StartRPCCall()
-
-	session := s.UserSessions.GetSession(in.SessionID)
-	if session == nil {
-		callObserver.FinishWithError()
-		return nil, fmt.Errorf("Unknown SessionID %d", in.SessionID)
-	}
-
-	defer callObserver.Finish()
-	headerMetadata := &session.RequiredHeaders[in.HeaderIndex]
-	headerMetadata.SHA256Struct = common.SHA256MessageToSHA256Struct(in.HeaderSHA256)
-	session.UserInfo.HeaderSHA256Cache.SetFileSHA256(headerMetadata.FilePath, headerMetadata.MTime, headerMetadata.SHA256Struct)
-	if systemSHA256 := s.SystemHeaders.GetSystemHeaderSHA256(headerMetadata.FilePath); systemSHA256 == headerMetadata.SHA256Struct {
-		headerMetadata.UseFromSystem = true
-		return &pb.SendFileSHA256Reply{}, nil
-	}
-
-	_, headerPathInWorkingDir := session.GetFilePathInWorkingDir(headerMetadata.FilePath)
-	start := time.Now()
-	// TODO Why 6 seconds?
-	for time.Since(start) < 6*time.Second {
-		if s.HeaderFileCache.CreateLinkFromCache(headerMetadata.FilePath, headerMetadata.SHA256Struct, headerPathInWorkingDir) {
-			return &pb.SendFileSHA256Reply{}, nil
-		}
-		if s.UploadingHeaders.StartHeaderSending(headerMetadata.FilePath, headerMetadata.SHA256Struct) {
-			return &pb.SendFileSHA256Reply{FullCopyRequired: true}, nil
-		}
-		// TODO Why 100 milliseconds?
-		time.Sleep(100 * time.Millisecond)
-	}
-
-	s.UploadingHeaders.ForceStartHeaderSending(headerMetadata.FilePath, headerMetadata.SHA256Struct)
-	return &pb.SendFileSHA256Reply{FullCopyRequired: true}, nil
+	}, callObserver.Finish()
 }
 
 func saveFileFromStream(file *os.File, stream pb.CompilationService_TransferFileServer) (int64, error) {
@@ -138,59 +100,89 @@ func saveFileFromStream(file *os.File, stream pb.CompilationService_TransferFile
 // TransferFile ...
 func (s *CompilationServer) TransferFile(stream pb.CompilationService_TransferFileServer) error {
 	callObserver := s.Stats.TransferFile.StartRPCCall()
-
 	request, err := stream.Recv()
 	if err != nil {
-		callObserver.FinishWithError()
-		return fmt.Errorf("Unexpected error: %v", err)
+		return callObserver.FinishWithError(fmt.Errorf("Unexpected error: %v", err))
 	}
 
-	defer stream.SendAndClose(&pb.TransferFileReply{})
 	metadata := request.GetHeader()
 	if metadata == nil {
-		callObserver.FinishWithError()
-		return fmt.Errorf("Metadata af first chunk is expected")
+		return callObserver.FinishWithError(fmt.Errorf("Metadata af first chunk is expected"))
 	}
 
 	session := s.UserSessions.GetSession(metadata.SessionID)
 	if session == nil {
-		callObserver.FinishWithError()
-		return fmt.Errorf("Unknown SessionID %d", metadata.SessionID)
+		return callObserver.FinishWithError(fmt.Errorf("Unknown SessionID %d", metadata.SessionID))
 	}
 
-	headerMetadata := &session.RequiredHeaders[metadata.HeaderIndex]
-	defer s.UploadingHeaders.FinishHeaderSending(headerMetadata.FilePath, headerMetadata.SHA256Struct)
-	_, headerPathInWorkingDir := session.GetFilePathInWorkingDir(headerMetadata.FilePath)
-	if s.HeaderFileCache.CreateLinkFromCache(headerMetadata.FilePath, headerMetadata.SHA256Struct, headerPathInWorkingDir) {
-		s.Stats.SendingHeadersDoubleReceived.Increment()
-		callObserver.Finish()
-		return nil
+	fileMetadata := &session.RequiredHeaders[metadata.FileIndex]
+	if metadata.FileSHA256 != nil {
+		fileMetadata.SHA256Struct = common.SHA256MessageToSHA256Struct(metadata.FileSHA256)
+		session.UserInfo.HeaderSHA256Cache.SetFileSHA256(fileMetadata.FilePath, fileMetadata.MTime, fileMetadata.FileSize, fileMetadata.SHA256Struct)
+		systemSHA256, systemSize := s.SystemHeaders.GetSystemHeaderSHA256AndSize(fileMetadata.FilePath)
+		if systemSize == fileMetadata.FileSize && systemSHA256 == fileMetadata.SHA256Struct {
+			fileMetadata.UseFromSystem = true
+			_ = stream.Send(&pb.TransferFileOut{FullCopyRequired: false})
+			return callObserver.Finish()
+		}
+	} else if fileMetadata.SHA256Struct.IsEmpty() {
+		return callObserver.FinishWithError(fmt.Errorf("SHA256 is required for %q", fileMetadata.FilePath))
+	}
+
+	defer s.UploadingHeaders.FinishHeaderSending(fileMetadata.FilePath, fileMetadata.SHA256Struct)
+	_, headerPathInWorkingDir := session.GetFilePathInWorkingDir(fileMetadata.FilePath)
+	if s.HeaderFileCache.CreateLinkFromCache(fileMetadata.FilePath, fileMetadata.SHA256Struct, headerPathInWorkingDir) {
+		_ = stream.Send(&pb.TransferFileOut{FullCopyRequired: false})
+		return callObserver.Finish()
+	}
+
+	useForceStart := true
+	start := time.Now()
+	// TODO Why 6 seconds?
+	for time.Since(start) < 6*time.Second {
+		if s.HeaderFileCache.CreateLinkFromCache(fileMetadata.FilePath, fileMetadata.SHA256Struct, headerPathInWorkingDir) {
+			_ = stream.Send(&pb.TransferFileOut{FullCopyRequired: false})
+			return callObserver.Finish()
+		}
+		if s.UploadingHeaders.StartHeaderSending(fileMetadata.FilePath, fileMetadata.SHA256Struct) {
+			useForceStart = false
+			_ = stream.Send(&pb.TransferFileOut{FullCopyRequired: true})
+			break
+		}
+		// TODO Why 100 milliseconds?
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	if useForceStart {
+		s.UploadingHeaders.ForceStartHeaderSending(fileMetadata.FilePath, fileMetadata.SHA256Struct)
+		_ = stream.Send(&pb.TransferFileOut{FullCopyRequired: true})
 	}
 
 	headerFileTmp, err := common.OpenTempFile(headerPathInWorkingDir)
 	if err != nil {
-		callObserver.FinishWithError()
-		return fmt.Errorf("Can't open temp file for saving header: %v", err)
+		return callObserver.FinishWithError(fmt.Errorf("Can't open temp file for saving header: %v", err))
 	}
 
-	headerFileSize, err := saveFileFromStream(headerFileTmp, stream)
+	transferredBytes, err := saveFileFromStream(headerFileTmp, stream)
 	headerFileTmp.Close()
+	clearTmpAndFinish := func(err error) error {
+		os.Remove(headerFileTmp.Name())
+		return callObserver.FinishWithError(err)
+	}
 	if err != nil {
-		os.Remove(headerFileTmp.Name())
-		callObserver.FinishWithError()
-		return err
+		return clearTmpAndFinish(err)
 	}
-
+	if fileMetadata.FileSize != transferredBytes {
+		return clearTmpAndFinish(fmt.Errorf("Mismatch transferred bytes count: received %d, expected %d", transferredBytes, fileMetadata.FileSize))
+	}
 	if err = os.Rename(headerFileTmp.Name(), headerPathInWorkingDir); err != nil {
-		os.Remove(headerFileTmp.Name())
-		callObserver.FinishWithError()
-		return fmt.Errorf("Can't rename header temp file: %v", err)
+		return clearTmpAndFinish(fmt.Errorf("Can't rename header temp file: %v", err))
 	}
 
+	common.LogInfo("File", fileMetadata.FilePath, "successfully transferred")
 	s.Stats.SendingHeadersReceived.Increment()
-	_, _ = s.HeaderFileCache.SaveFileToCache(headerPathInWorkingDir, headerMetadata.FilePath, headerMetadata.SHA256Struct, headerFileSize)
-	callObserver.Finish()
-	return nil
+	_, _ = s.HeaderFileCache.SaveFileToCache(headerPathInWorkingDir, fileMetadata.FilePath, fileMetadata.SHA256Struct, fileMetadata.FileSize)
+	return callObserver.Finish()
 }
 
 func (s *CompilationServer) closeSession(session *UserSession, sessionID uint64, close bool) {
@@ -206,16 +198,14 @@ func (s *CompilationServer) CompileSource(ctx context.Context, in *pb.CompileSou
 
 	session := s.UserSessions.GetSession(in.SessionID)
 	if session == nil {
-		callObserver.FinishWithError()
-		return nil, fmt.Errorf("Unknown SessionID %d", in.SessionID)
+		return nil, callObserver.FinishWithError(fmt.Errorf("Unknown SessionID %d", in.SessionID))
 	}
 
 	defer s.closeSession(session, in.SessionID, in.CloseSessionAfterBuild)
 
 	err := common.WriteFile(session.SourceFilePath, in.SourceBody)
 	if err != nil {
-		callObserver.FinishWithError()
-		return nil, fmt.Errorf("Can't write source for compilation: %v", err)
+		return nil, callObserver.FinishWithError(fmt.Errorf("Can't write source for compilation: %v", err))
 	}
 
 	compilerProc := exec.Command(session.Compiler, session.RemoveUnusedIncludeDirsAndGetCompilerArgs()...)
@@ -230,17 +220,16 @@ func (s *CompilationServer) CompileSource(ctx context.Context, in *pb.CompileSou
 	var compiledSource []byte
 	if compilerProc.ProcessState.ExitCode() == 0 {
 		if compiledSource, err = ioutil.ReadFile(session.OutObjectFilePath); err != nil {
-			callObserver.FinishWithError()
-			return nil, fmt.Errorf("Can't read compiled source: %v", err)
+			return nil, callObserver.FinishWithError(fmt.Errorf("Can't read compiled source: %v", err))
 		}
 	}
-	callObserver.Finish()
+
 	return &pb.CompileSourceReply{
 		CompilerRetCode: int32(compilerProc.ProcessState.ExitCode()),
 		CompiledSource:  compiledSource,
 		CompilerStdout:  compilerStdout.Bytes(),
 		CompilerStderr:  compilerStderr.Bytes(),
-	}, nil
+	}, callObserver.Finish()
 }
 
 // CloseSession ...
@@ -248,12 +237,10 @@ func (s *CompilationServer) CloseSession(ctx context.Context, in *pb.CloseSessio
 	callObserver := s.Stats.CloseSession.StartRPCCall()
 	session := s.UserSessions.GetSession(in.SessionID)
 	if session == nil {
-		callObserver.FinishWithError()
-		return nil, fmt.Errorf("Unknown SessionID %d", in.SessionID)
+		return nil, callObserver.FinishWithError(fmt.Errorf("Unknown SessionID %d", in.SessionID))
 	}
 	s.closeSession(session, in.SessionID, true)
-	callObserver.Finish()
-	return &pb.CloseSessionReply{}, nil
+	return &pb.CloseSessionReply{}, callObserver.Finish()
 }
 
 // Status ...

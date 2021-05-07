@@ -105,7 +105,7 @@ func (s *Sessions) OpenNewSession(in *pb.StartCompilationSessionRequest, session
 		UserInfo:        userInfo,
 	}
 	for _, headerMetadata := range in.RequiredHeaders {
-		headerSHA256, _ := userInfo.HeaderSHA256Cache.GetFileSHA256(headerMetadata.FilePath, headerMetadata.MTime)
+		headerSHA256, _ := userInfo.HeaderSHA256Cache.GetFileSHA256(headerMetadata.FilePath, headerMetadata.MTime, headerMetadata.FileSize)
 		newSession.RequiredHeaders = append(newSession.RequiredHeaders, RequiredHeaderMetadata{
 			FileMetadata: headerMetadata,
 			SHA256Struct: headerSHA256,
