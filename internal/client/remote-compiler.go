@@ -60,13 +60,17 @@ func transferFileByChunks(path string, stream pb.CompilationService_TransferFile
 	for {
 		n, err := file.Read(buffer[:])
 		if err == io.EOF {
-			return nil
+			err = nil
+			n = 0
 		}
 		if err != nil {
 			return fmt.Errorf("Can't read file %q: %v", path, err)
 		}
 		if err = stream.Send(&pb.TransferFileIn{Chunk: &pb.TransferFileIn_FileBodyChunk{FileBodyChunk: buffer[:n]}}); err != nil {
 			return fmt.Errorf("Can't transfer file %q: %v", path, err)
+		}
+		if n == 0 {
+			return nil
 		}
 	}
 }
@@ -108,9 +112,20 @@ func (compiler *RemoteCompiler) transferFile(path string, index int32, sha256Req
 		return
 	}
 
-	if reply.FullCopyRequired {
+	if reply.Status == pb.RequiredStatus_FULL_COPY_REQUIRED {
 		if err = transferFileByChunks(path, stream); err != nil {
 			wg.Done(err)
+			return
+		}
+
+		reply, err = stream.Recv()
+		if err != nil {
+			wg.Done(fmt.Errorf("Can't get transfer finalization reply: %v", err))
+			return
+		}
+
+		if reply.Status != pb.RequiredStatus_DONE {
+			wg.Done(fmt.Errorf("Can't finalize file transferring: got unexpected status %v", reply.Status))
 			return
 		}
 	}

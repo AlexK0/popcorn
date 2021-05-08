@@ -41,7 +41,7 @@ func (session *UserSession) GetFilePathInWorkingDir(filePathOnClientFileSystem s
 		filePathOnClientFileSystem = strings.Replace(filePathOnClientFileSystem, session.userDir, POPCORN_SERVER_USER_DIR, 1)
 	}
 	relative = strings.TrimLeft(filePathOnClientFileSystem, "/")
-	absolute = path.Join(session.WorkingDir, filePathOnClientFileSystem)
+	absolute = path.Join(session.WorkingDir, relative)
 	return
 }
 

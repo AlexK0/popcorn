@@ -40,8 +40,9 @@ message StartCompilationSessionRequest {
 }
 
 enum RequiredStatus {
-    FULL_COPY_REQUIRED = 0;
+    DONE = 0;
     SHA256_REQUIRED = 1;
+    FULL_COPY_REQUIRED = 2;
 }
 
 message RequiredFile {
@@ -67,7 +68,7 @@ message TransferFileIn {
 }
 
 message TransferFileOut {
-    bool FullCopyRequired = 1;
+    RequiredStatus status = 1;
 }
 
 message CompileSourceRequest {

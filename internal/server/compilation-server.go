@@ -82,6 +82,9 @@ func saveFileFromStream(file *os.File, stream pb.CompilationService_TransferFile
 		if fileChunk == nil {
 			return 0, fmt.Errorf("Header body chunk is expected")
 		}
+		if len(fileChunk) == 0 {
+			break
+		}
 		if _, err = file.Write(fileChunk); err != nil {
 			return 0, fmt.Errorf("Can't write header chunk: %v", err)
 		}
@@ -114,7 +117,7 @@ func (s *CompilationServer) TransferFile(stream pb.CompilationService_TransferFi
 		session.UserInfo.HeaderSHA256Cache.SetFileSHA256(fileMetadata.FilePath, fileMetadata.MTime, fileMetadata.FileSize, fileMetadata.SHA256Struct)
 		if s.SystemHeaders.IsSystemHeader(fileMetadata.FilePath, fileMetadata.FileSize, fileMetadata.SHA256Struct) {
 			fileMetadata.UseFromSystem = true
-			_ = stream.Send(&pb.TransferFileOut{FullCopyRequired: false})
+			_ = stream.Send(&pb.TransferFileOut{Status: pb.RequiredStatus_DONE})
 			return callObserver.Finish()
 		}
 	} else if fileMetadata.SHA256Struct.IsEmpty() {
@@ -125,17 +128,17 @@ func (s *CompilationServer) TransferFile(stream pb.CompilationService_TransferFi
 	start := time.Now()
 	for {
 		if s.HeaderFileCache.CreateLinkFromCache(fileMetadata.FilePath, fileMetadata.SHA256Struct, headerPathInWorkingDir) {
-			_ = stream.Send(&pb.TransferFileOut{FullCopyRequired: false})
+			_ = stream.Send(&pb.TransferFileOut{Status: pb.RequiredStatus_DONE})
 			return callObserver.Finish()
 		}
 		if s.UploadingHeaders.StartHeaderSending(fileMetadata.FilePath, fileMetadata.SHA256Struct) {
-			_ = stream.Send(&pb.TransferFileOut{FullCopyRequired: true})
+			_ = stream.Send(&pb.TransferFileOut{Status: pb.RequiredStatus_FULL_COPY_REQUIRED})
 			break
 		}
 		// TODO Why 6 seconds?
 		if time.Since(start) > 6*time.Second {
 			s.UploadingHeaders.ForceStartHeaderSending(fileMetadata.FilePath, fileMetadata.SHA256Struct)
-			_ = stream.Send(&pb.TransferFileOut{FullCopyRequired: true})
+			_ = stream.Send(&pb.TransferFileOut{Status: pb.RequiredStatus_FULL_COPY_REQUIRED})
 			break
 		}
 		// TODO Why 100 milliseconds?
@@ -164,9 +167,11 @@ func (s *CompilationServer) TransferFile(stream pb.CompilationService_TransferFi
 		return clearTmpAndFinish(fmt.Errorf("Can't rename header temp file: %v", err))
 	}
 
-	common.LogInfo("File", fileMetadata.FilePath, "successfully transferred")
-	s.Stats.SendingHeadersReceived.Increment()
+	_ = stream.Send(&pb.TransferFileOut{Status: pb.RequiredStatus_DONE})
 	_, _ = s.HeaderFileCache.SaveFileToCache(headerPathInWorkingDir, fileMetadata.FilePath, fileMetadata.SHA256Struct, fileMetadata.FileSize)
+
+	s.Stats.SendingHeadersReceived.Increment()
+	common.LogInfo("File", fileMetadata.FilePath, "successfully transferred")
 	return callObserver.Finish()
 }
 
