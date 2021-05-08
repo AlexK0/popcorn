@@ -15,66 +15,55 @@ type AtomicStat struct {
 	counter int64
 }
 
-// Increment ...
 func (s *AtomicStat) Increment() {
 	atomic.AddInt64(&s.counter, 1)
 }
 
-// Set ...
 func (s *AtomicStat) Set(v int64) {
 	atomic.StoreInt64(&s.counter, v)
 }
 
-// AddDuration ...
 func (s *AtomicStat) AddDuration(d time.Duration) {
 	atomic.AddInt64(&s.counter, int64(d))
 }
 
-// Get ...
 func (s *AtomicStat) Get() int64 {
 	return atomic.LoadInt64(&s.counter)
 }
 
-// GetAsSeconds ...
 func (s *AtomicStat) GetAsSeconds() float64 {
 	return time.Duration(s.Get()).Seconds()
 }
 
-// RPCCallStats ...
 type RPCCallStats struct {
 	Calls          AtomicStat
 	Errors         AtomicStat
 	ProcessingTime AtomicStat
 }
 
-// RPCCallObserver ...
 type RPCCallObserver struct {
 	start time.Time
 	stat  *RPCCallStats
 }
 
-// StartRPCCall ...
 func (c *RPCCallStats) StartRPCCall() RPCCallObserver {
 	c.Calls.Increment()
 	return RPCCallObserver{time.Now(), c}
 }
 
-// Finish ...
 func (o RPCCallObserver) Finish() error {
 	o.stat.ProcessingTime.AddDuration(time.Since(o.start))
 	return nil
 }
 
-// FinishWithError ...
 func (o RPCCallObserver) FinishWithError(err error) error {
 	o.stat.Errors.Increment()
 	o.stat.ProcessingTime.AddDuration(time.Since(o.start))
 	return err
 }
 
-// CompilationServerStats ...
 type CompilationServerStats struct {
-	SendingHeadersReceived AtomicStat
+	TransferredFiles AtomicStat
 
 	StartCompilationSession RPCCallStats
 	TransferFile            RPCCallStats
@@ -85,7 +74,6 @@ type CompilationServerStats struct {
 	statsBuffer      bytes.Buffer
 }
 
-// MakeServerStats ...
 func MakeServerStats(statsdHostPort string) (*CompilationServerStats, error) {
 	if len(statsdHostPort) == 0 {
 		return &CompilationServerStats{}, nil
@@ -122,19 +110,19 @@ func (cs *CompilationServerStats) feedBufferWithStats(compilationServer *Compila
 	cs.writeFloatStat("server.uptime", time.Since(compilationServer.StartTime).Seconds())
 	cs.writeStat("server.goroutines", int64(runtime.NumGoroutine()))
 
-	cs.writeStat("sessions.active", compilationServer.UserSessions.ActiveSessions())
+	cs.writeStat("sessions.active", compilationServer.ActiveSessions.ActiveSessions())
 
-	cs.writeStat("caches.clients.count", compilationServer.Clients.Count())
-	cs.writeStat("caches.clients.random_client_cache_size", compilationServer.Clients.GetRandomClientCacheSize())
+	cs.writeStat("caches.clients.count", compilationServer.RemoteClients.Count())
+	cs.writeStat("caches.clients.random_client_cache_size", compilationServer.RemoteClients.GetRandomClientCacheSize())
 
 	cs.writeStat("caches.system_headers.count", compilationServer.SystemHeaders.GetSystemHeadersCount())
 
-	cs.writeStat("caches.user_headers.count", compilationServer.HeaderFileCache.GetFilesCount())
-	cs.writeStat("caches.user_headers.purged", compilationServer.HeaderFileCache.GetPurgedFiles())
-	cs.writeStat("caches.user_headers.disk_bytes", compilationServer.HeaderFileCache.GetBytesOnDisk())
+	cs.writeStat("caches.file_cache.count", compilationServer.PersistentFileCache.GetFilesCount())
+	cs.writeStat("caches.file_cache.purged", compilationServer.PersistentFileCache.GetPurgedFiles())
+	cs.writeStat("caches.file_cache.disk_bytes", compilationServer.PersistentFileCache.GetBytesOnDisk())
 
-	cs.writeStat("sending_headers.in_progress", compilationServer.UploadingHeaders.SendingHeadersCount())
-	cs.writeAtomicStat("sending_headers.received", &cs.SendingHeadersReceived)
+	cs.writeStat("transferring_files.in_progress", compilationServer.UploadingFiles.TransferringFilesCount())
+	cs.writeAtomicStat("transferring_files.received", &cs.TransferredFiles)
 
 	cs.writeRPCCallStat("start_compilation_session", &cs.StartCompilationSession)
 	cs.writeRPCCallStat("transfer_file", &cs.TransferFile)
@@ -174,7 +162,6 @@ func (cs *CompilationServerStats) feedBufferWithStats(compilationServer *Compila
 	cs.writeFloatStat("gc.cpu_fraction", mem.GCCPUFraction)
 }
 
-// SendStats ...
 func (cs *CompilationServerStats) SendStats(compilationServer *CompilationServer) {
 	if cs.statsdConnection == nil {
 		return
@@ -186,7 +173,6 @@ func (cs *CompilationServerStats) SendStats(compilationServer *CompilationServer
 	cs.statsBuffer.Reset()
 }
 
-// GetStatsRawBytes ...
 func (cs *CompilationServerStats) GetStatsRawBytes(compilationServer *CompilationServer) []byte {
 	cs.feedBufferWithStats(compilationServer)
 	result := cs.statsBuffer.Bytes()
@@ -194,7 +180,6 @@ func (cs *CompilationServerStats) GetStatsRawBytes(compilationServer *Compilatio
 	return result
 }
 
-// Close ...
 func (cs *CompilationServerStats) Close() {
 	if cs.statsdConnection != nil {
 		cs.statsdConnection.Close()

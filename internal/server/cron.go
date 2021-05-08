@@ -11,7 +11,6 @@ import (
 	"github.com/AlexK0/popcorn/internal/common"
 )
 
-// Cron ...
 type Cron struct {
 	wg       sync.WaitGroup
 	stopFlag int32
@@ -24,8 +23,8 @@ func (c *Cron) doCron() {
 		cronStartTime := time.Now()
 		c.Server.Stats.SendStats(c.Server)
 
-		c.Server.HeaderFileCache.PurgeLastElementsIfRequired()
-		c.Server.Clients.PurgeOutdatedUsers()
+		c.Server.PersistentFileCache.PurgeLastElementsIfRequired()
+		c.Server.RemoteClients.PurgeOutdatedClients()
 
 		sleepTime := time.Second - time.Since(cronStartTime)
 		if sleepTime <= 0 {
@@ -55,7 +54,6 @@ func (c *Cron) doCron() {
 	c.wg.Done()
 }
 
-// Start ...
 func (c *Cron) Start() {
 	c.signals = make(chan os.Signal, 2)
 	signal.Notify(c.signals, syscall.SIGUSR1, syscall.SIGTERM)
@@ -63,7 +61,6 @@ func (c *Cron) Start() {
 	go c.doCron()
 }
 
-// Stop ...
 func (c *Cron) Stop() {
 	atomic.StoreInt32(&c.stopFlag, 1)
 	c.wg.Wait()

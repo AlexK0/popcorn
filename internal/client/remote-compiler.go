@@ -10,24 +10,22 @@ import (
 	"github.com/AlexK0/popcorn/internal/common"
 )
 
-// RemoteCompiler ...
 type RemoteCompiler struct {
 	name          string
 	inFile        string
 	outFile       string
 	remoteCmdArgs []string
 
-	grpcClient *GRPCClient
-	userID     *pb.SHA256Message
-	userName   string
-	sessionID  uint64
+	grpcClient     *GRPCClient
+	clientID       *pb.SHA256Message
+	clientUserName string
+	sessionID      uint64
 
 	needCloseSession bool
 }
 
-// MakeRemoteCompiler ...
 func MakeRemoteCompiler(localCompiler *LocalCompiler, serverHostPort string) (*RemoteCompiler, error) {
-	userName, userID, err := common.MakeUniqueUserID()
+	clientUserName, clientID, err := common.MakeUniqueClientID()
 	if err != nil {
 		return nil, err
 	}
@@ -43,9 +41,9 @@ func MakeRemoteCompiler(localCompiler *LocalCompiler, serverHostPort string) (*R
 		outFile:       localCompiler.outFile,
 		remoteCmdArgs: localCompiler.MakeRemoteCmd(),
 
-		grpcClient: grpcClient,
-		userID:     userID,
-		userName:   userName,
+		grpcClient:     grpcClient,
+		clientID:       clientID,
+		clientUserName: clientUserName,
 	}, nil
 }
 
@@ -141,8 +139,8 @@ func (compiler *RemoteCompiler) SetupEnvironment(headers []*pb.FileMetadata) err
 	clientCacheStream, err := compiler.grpcClient.Client.StartCompilationSession(
 		compiler.grpcClient.CallContext,
 		&pb.StartCompilationSessionRequest{
-			UserID:          compiler.userID,
-			UserName:        compiler.userName,
+			ClientID:        compiler.clientID,
+			ClientUserName:  compiler.clientUserName,
 			SourceFilePath:  compiler.inFile,
 			Compiler:        compiler.name,
 			CompilerArgs:    compiler.remoteCmdArgs,
@@ -195,7 +193,6 @@ func (compiler *RemoteCompiler) CompileSource() (retCode int, stdout []byte, std
 	return int(res.CompilerRetCode), res.CompilerStderr, res.CompilerStdout, nil
 }
 
-// Clear ...
 func (compiler *RemoteCompiler) Clear() {
 	if compiler.needCloseSession {
 		_, _ = compiler.grpcClient.Client.CloseSession(

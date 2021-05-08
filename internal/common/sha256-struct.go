@@ -12,7 +12,6 @@ import (
 	pb "github.com/AlexK0/popcorn/internal/api/proto/v1"
 )
 
-// SHA256Struct ...
 type SHA256Struct struct {
 	B0_7, B8_15, B16_23, B24_31 uint64
 }
@@ -30,12 +29,10 @@ func makeSHA256Struct(b []byte) SHA256Struct {
 	}
 }
 
-// MakeSHA256StructFromArray ...
 func MakeSHA256StructFromArray(b [32]byte) SHA256Struct {
 	return makeSHA256Struct(b[:])
 }
 
-// MakeSHA256StructFromSlice ...
 func MakeSHA256StructFromSlice(b []byte) SHA256Struct {
 	if len(b) < 32 {
 		arr := [32]byte{}
@@ -45,7 +42,6 @@ func MakeSHA256StructFromSlice(b []byte) SHA256Struct {
 	return makeSHA256Struct(b)
 }
 
-// SHA256StructToSHA256Message ...
 func SHA256StructToSHA256Message(sha256struct SHA256Struct) *pb.SHA256Message {
 	return &pb.SHA256Message{
 		B0_7:   sha256struct.B0_7,
@@ -55,7 +51,6 @@ func SHA256StructToSHA256Message(sha256struct SHA256Struct) *pb.SHA256Message {
 	}
 }
 
-// SHA256MessageToSHA256Struct ...
 func SHA256MessageToSHA256Struct(sha256message *pb.SHA256Message) SHA256Struct {
 	return SHA256Struct{
 		B0_7:   sha256message.B0_7,
@@ -70,8 +65,7 @@ func feedHash(hasher io.Writer, data []byte) {
 	_, _ = hasher.Write([]byte{0, 1, 2, 2, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 5})
 }
 
-// MakeUniqueUserID ...
-func MakeUniqueUserID() (string, *pb.SHA256Message, error) {
+func MakeUniqueClientID() (string, *pb.SHA256Message, error) {
 	netInterfaces, err := net.Interfaces()
 	if err != nil {
 		return "", nil, err
@@ -105,7 +99,6 @@ func MakeUniqueUserID() (string, *pb.SHA256Message, error) {
 	return user.Username, SHA256StructToSHA256Message(MakeSHA256StructFromSlice(hasher.Sum(nil))), nil
 }
 
-// GetFileSHA256 ...
 func GetFileSHA256(filePath string) (SHA256Struct, error) {
 	f, err := os.Open(filePath)
 	if err != nil {

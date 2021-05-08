@@ -30,8 +30,8 @@ message FileMetadata {
 }
 
 message StartCompilationSessionRequest {
-    SHA256Message UserID = 1;
-    string UserName = 2;
+    SHA256Message ClientID = 1;
+    string ClientUserName = 2;
     string SourceFilePath = 3;
     string Compiler = 4;
     repeated string CompilerArgs = 5;

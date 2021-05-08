@@ -85,12 +85,12 @@ func main() {
 		SessionsDir: path.Join(settings.WorkingDir, "sessions"),
 		GRPCServer:  grpcServer,
 
-		Clients:          server.MakeUsers(),
-		UploadingHeaders: server.MakeProcessingHeaders(),
-		SystemHeaders:    server.MakeSystemHeaderCache(),
-		HeaderFileCache:  headerCache,
+		RemoteClients:       server.MakeClients(),
+		UploadingFiles:      server.MakeTransferringFiles(),
+		SystemHeaders:       server.MakeSystemHeaderCache(),
+		PersistentFileCache: headerCache,
 
-		UserSessions: server.MakeUserSessions(),
+		ActiveSessions: server.MakeSessions(),
 
 		Stats: serverStats,
 	}

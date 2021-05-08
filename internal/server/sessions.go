@@ -11,7 +11,6 @@ import (
 	pb "github.com/AlexK0/popcorn/internal/api/proto/v1"
 )
 
-// RequiredHeaderMetadata ...
 type RequiredHeaderMetadata struct {
 	*pb.FileMetadata
 	common.SHA256Struct
@@ -20,10 +19,9 @@ type RequiredHeaderMetadata struct {
 
 const POPCORN_SERVER_USER_DIR = "/popcorn-server-user/"
 
-// UserSession ...
-type UserSession struct {
-	userDir      string
-	compilerArgs []string
+type ClientSession struct {
+	clientUserDir string
+	compilerArgs  []string
 
 	SourceFilePath    string
 	OutObjectFilePath string
@@ -33,26 +31,26 @@ type UserSession struct {
 
 	RequiredHeaders []RequiredHeaderMetadata
 
-	UserInfo *Client
+	ClientInfo *Client
 }
 
-func (session *UserSession) GetFilePathInWorkingDir(filePathOnClientFileSystem string) (relative string, absolute string) {
+func (session *ClientSession) GetFilePathInWorkingDir(filePathOnClientFileSystem string) (relative string, absolute string) {
 	if session.UseObjectCache {
-		filePathOnClientFileSystem = strings.Replace(filePathOnClientFileSystem, session.userDir, POPCORN_SERVER_USER_DIR, 1)
+		filePathOnClientFileSystem = strings.Replace(filePathOnClientFileSystem, session.clientUserDir, POPCORN_SERVER_USER_DIR, 1)
 	}
 	relative = strings.TrimLeft(filePathOnClientFileSystem, "/")
 	absolute = path.Join(session.WorkingDir, relative)
 	return
 }
 
-func (session *UserSession) GetDirPathInWorkingDir(dirPathOnClientFileSystem string) (relative string, absolute string) {
+func (session *ClientSession) GetDirPathInWorkingDir(dirPathOnClientFileSystem string) (relative string, absolute string) {
 	if !strings.HasSuffix(dirPathOnClientFileSystem, "/") {
 		dirPathOnClientFileSystem += "/"
 	}
 	return session.GetFilePathInWorkingDir(dirPathOnClientFileSystem)
 }
 
-func (session *UserSession) RemoveUnusedIncludeDirsAndGetCompilerArgs() []string {
+func (session *ClientSession) RemoveUnusedIncludeDirsAndGetCompilerArgs() []string {
 	compilerArgs := make([]string, 0, len(session.compilerArgs))
 	for i := 0; i < len(session.compilerArgs); i++ {
 		arg := session.compilerArgs[i]
@@ -80,32 +78,29 @@ func (session *UserSession) RemoveUnusedIncludeDirsAndGetCompilerArgs() []string
 	return compilerArgs
 }
 
-// Sessions ...
 type Sessions struct {
-	sessions map[uint64]*UserSession
+	sessions map[uint64]*ClientSession
 
 	sessionsCounter uint64
 	mu              sync.RWMutex
 }
 
-// MakeUserSessions ...
-func MakeUserSessions() *Sessions {
+func MakeSessions() *Sessions {
 	return &Sessions{
-		sessions: make(map[uint64]*UserSession, 512),
+		sessions: make(map[uint64]*ClientSession, 512),
 	}
 }
 
-// OpenNewSession ...
-func (s *Sessions) OpenNewSession(in *pb.StartCompilationSessionRequest, sessionsDir string, userInfo *Client) (uint64, *UserSession) {
-	newSession := &UserSession{
-		userDir:         "/" + in.UserName + "/",
+func (s *Sessions) OpenNewSession(in *pb.StartCompilationSessionRequest, sessionsDir string, clientInfo *Client) (uint64, *ClientSession) {
+	newSession := &ClientSession{
+		clientUserDir:   "/" + in.ClientUserName + "/",
 		Compiler:        in.Compiler,
 		UseObjectCache:  in.UseObjectCache,
 		RequiredHeaders: make([]RequiredHeaderMetadata, 0, len(in.RequiredHeaders)),
-		UserInfo:        userInfo,
+		ClientInfo:      clientInfo,
 	}
 	for _, headerMetadata := range in.RequiredHeaders {
-		headerSHA256, _ := userInfo.HeaderSHA256Cache.GetFileSHA256(headerMetadata.FilePath, headerMetadata.MTime, headerMetadata.FileSize)
+		headerSHA256, _ := clientInfo.FileSHA256Cache.GetFileSHA256(headerMetadata.FilePath, headerMetadata.MTime, headerMetadata.FileSize)
 		newSession.RequiredHeaders = append(newSession.RequiredHeaders, RequiredHeaderMetadata{
 			FileMetadata: headerMetadata,
 			SHA256Struct: headerSHA256,
@@ -128,22 +123,19 @@ func (s *Sessions) OpenNewSession(in *pb.StartCompilationSessionRequest, session
 	return sessionID, newSession
 }
 
-// GetSession ...
-func (s *Sessions) GetSession(sessionID uint64) *UserSession {
+func (s *Sessions) GetSession(sessionID uint64) *ClientSession {
 	s.mu.RLock()
 	session := s.sessions[sessionID]
 	s.mu.RUnlock()
 	return session
 }
 
-// CloseSession ...
 func (s *Sessions) CloseSession(sessionID uint64) {
 	s.mu.Lock()
 	delete(s.sessions, sessionID)
 	s.mu.Unlock()
 }
 
-// ActiveSessions ...
 func (s *Sessions) ActiveSessions() int64 {
 	s.mu.RLock()
 	acriveSessions := len(s.sessions)
