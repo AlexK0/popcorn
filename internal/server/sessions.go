@@ -23,7 +23,6 @@ type ClientSession struct {
 	clientUserDir string
 	compilerArgs  []string
 
-	SourceFilePath    string
 	OutObjectFilePath string
 	Compiler          string
 	WorkingDir        string
@@ -31,6 +30,32 @@ type ClientSession struct {
 
 	ClientInfo        *Client
 	RequiredFilesMeta []requiredFileMetadata
+}
+
+func (session *ClientSession) MakeObjectCacheKey() (common.SHA256Struct, string) {
+	sha256xor := common.SHA256Struct{}
+
+	keyBuilder := strings.Builder{}
+	keyBuilder.Grow(1024)
+
+	keyBuilder.WriteString("compiler-")
+	keyBuilder.WriteString(session.Compiler)
+	keyBuilder.WriteString(";args-")
+
+	for _, arg := range session.compilerArgs {
+		keyBuilder.WriteString(arg)
+		keyBuilder.WriteString(" ")
+	}
+
+	keyBuilder.WriteString(";depends-")
+	for _, requiredFile := range session.RequiredFilesMeta {
+		fmt.Fprintf(&keyBuilder, "f:%s/0x%X/0x%X/0x%X/0x%X/", requiredFile.FilePath, requiredFile.B0_7, requiredFile.B8_15, requiredFile.B16_23, requiredFile.B24_31)
+		sha256xor.B0_7 ^= requiredFile.B0_7
+		sha256xor.B8_15 ^= requiredFile.B8_15
+		sha256xor.B16_23 ^= requiredFile.B16_23
+		sha256xor.B24_31 ^= requiredFile.B24_31
+	}
+	return sha256xor, keyBuilder.String()
 }
 
 func (session *ClientSession) GetFilePathInWorkingDir(filePathOnClientFileSystem string) (relative string, absolute string) {
@@ -75,7 +100,7 @@ type Sessions struct {
 
 func MakeSessions() *Sessions {
 	return &Sessions{
-		sessions: make(map[uint64]*ClientSession, 512),
+		sessions: make(map[uint64]*ClientSession, 1024),
 	}
 }
 
@@ -102,10 +127,9 @@ func (s *Sessions) OpenNewSession(in *pb.StartCompilationSessionRequest, session
 
 	newSession.WorkingDir = path.Join(sessionsDir, fmt.Sprint(sessionID))
 
-	inFileRel, inFileAbs := newSession.GetFilePathInWorkingDir(in.SourceFilePath)
+	inFileRel, _ := newSession.GetFilePathInWorkingDir(in.SourceFilePath)
 	outFileRel, outFileAbs := newSession.GetFilePathInWorkingDir(in.SourceFilePath + ".o")
 
-	newSession.SourceFilePath = inFileAbs
 	newSession.OutObjectFilePath = outFileAbs
 	newSession.compilerArgs = append(in.CompilerArgs, inFileRel, "-o", outFileRel)
 	return sessionID, newSession

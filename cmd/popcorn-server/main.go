@@ -44,7 +44,8 @@ func main() {
 	flag.StringVar(&settings.WorkingDir, "working-dir", "/tmp/popcorn-server", "Directory for saving and compiling incoming files.")
 	flag.StringVar(&settings.LogFileName, "log-filename", "", "Logger file.")
 	flag.StringVar(&settings.LogSeverity, "log-severity", common.WarningSeverity, "Logger severity level.")
-	flag.Int64Var(&settings.HeaderCacheLimit, "header-cache-limit", 512*1024*1024, "Header cache limit in bytes.")
+	flag.Int64Var(&settings.SrcCacheLimit, "src-cache-limit", 512*1024*1024, "Header and source cache limit in bytes.")
+	flag.Int64Var(&settings.ObjCacheLimit, "obj-cache-limit", 10*1024*1024*1024, "Compiled object cache limit in bytes.")
 	flag.StringVar(&settings.StatsdAddress, "statsd", "", "Statsd address.")
 
 	flag.Parse()
@@ -74,9 +75,14 @@ func main() {
 		common.LogFatal("Failed to listen:", err)
 	}
 
-	headerCache, err := server.MakeFileCache(path.Join(settings.WorkingDir, "header-cache"), settings.HeaderCacheLimit)
+	srcCache, err := server.MakeFileCache(path.Join(settings.WorkingDir, "src-cache"), settings.SrcCacheLimit)
 	if err != nil {
-		common.LogFatal("Failed to init header cache:", err)
+		common.LogFatal("Failed to init src file cache:", err)
+	}
+
+	objCache, err := server.MakeFileCache(path.Join(settings.WorkingDir, "obj-cache"), settings.ObjCacheLimit)
+	if err != nil {
+		common.LogFatal("Failed to init src file cache:", err)
 	}
 
 	grpcServer := grpc.NewServer(grpc.MaxRecvMsgSize(1024*1204*1024), grpc.MaxSendMsgSize(1024*1204*1024))
@@ -85,10 +91,11 @@ func main() {
 		SessionsDir: path.Join(settings.WorkingDir, "sessions"),
 		GRPCServer:  grpcServer,
 
-		RemoteClients:       server.MakeClients(),
-		UploadingFiles:      server.MakeTransferringFiles(),
-		SystemHeaders:       server.MakeSystemHeaderCache(),
-		PersistentFileCache: headerCache,
+		RemoteClients:  server.MakeClients(),
+		UploadingFiles: server.MakeTransferringFiles(),
+		SystemHeaders:  server.MakeSystemHeaderCache(),
+		SrcFileCache:   srcCache,
+		ObjFileCache:   objCache,
 
 		ActiveSessions: server.MakeSessions(),
 

@@ -117,9 +117,13 @@ func (cs *CompilationServerStats) feedBufferWithStats(compilationServer *Compila
 
 	cs.writeStat("caches.system_headers.count", compilationServer.SystemHeaders.GetSystemHeadersCount())
 
-	cs.writeStat("caches.file_cache.count", compilationServer.PersistentFileCache.GetFilesCount())
-	cs.writeStat("caches.file_cache.purged", compilationServer.PersistentFileCache.GetPurgedFiles())
-	cs.writeStat("caches.file_cache.disk_bytes", compilationServer.PersistentFileCache.GetBytesOnDisk())
+	cs.writeStat("caches.src_cache.count", compilationServer.SrcFileCache.GetFilesCount())
+	cs.writeStat("caches.src_cache.purged", compilationServer.SrcFileCache.GetPurgedFiles())
+	cs.writeStat("caches.src_cache.disk_bytes", compilationServer.SrcFileCache.GetBytesOnDisk())
+
+	cs.writeStat("caches.obj_cache.count", compilationServer.ObjFileCache.GetFilesCount())
+	cs.writeStat("caches.obj_cache.purged", compilationServer.ObjFileCache.GetPurgedFiles())
+	cs.writeStat("caches.obj_cache.disk_bytes", compilationServer.ObjFileCache.GetBytesOnDisk())
 
 	cs.writeStat("transferring_files.in_progress", compilationServer.UploadingFiles.TransferringFilesCount())
 	cs.writeAtomicStat("transferring_files.received", &cs.TransferredFiles)

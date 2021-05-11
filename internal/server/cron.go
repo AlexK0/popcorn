@@ -23,7 +23,8 @@ func (c *Cron) doCron() {
 		cronStartTime := time.Now()
 		c.Server.Stats.SendStats(c.Server)
 
-		c.Server.PersistentFileCache.PurgeLastElementsIfRequired()
+		c.Server.SrcFileCache.PurgeLastElementsIfRequired()
+		c.Server.ObjFileCache.PurgeLastElementsIfRequired()
 		c.Server.RemoteClients.PurgeOutdatedClients()
 
 		sleepTime := time.Second - time.Since(cronStartTime)

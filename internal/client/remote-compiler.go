@@ -134,7 +134,7 @@ func (compiler *RemoteCompiler) transferFile(path string, index uint32, sha256Re
 	}
 }
 
-func (compiler *RemoteCompiler) SetupEnvironment(files []*pb.FileMetadata) error {
+func (compiler *RemoteCompiler) SetupEnvironment(files []*pb.FileMetadata, useObjCache bool) error {
 	clientCacheStream, err := compiler.grpcClient.Client.StartCompilationSession(
 		compiler.grpcClient.CallContext,
 		&pb.StartCompilationSessionRequest{
@@ -144,6 +144,7 @@ func (compiler *RemoteCompiler) SetupEnvironment(files []*pb.FileMetadata) error
 			Compiler:       compiler.name,
 			CompilerArgs:   compiler.remoteCmdArgs,
 			RequiredFiles:  files,
+			UseObjectCache: useObjCache,
 		})
 	if err != nil {
 		return err

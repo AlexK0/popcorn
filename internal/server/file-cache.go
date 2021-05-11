@@ -14,7 +14,7 @@ import (
 type CachedFileKey struct {
 	path     string
 	key      common.SHA256Struct
-	extraKey common.SHA256Struct
+	extraKey string
 }
 
 type cachedFile struct {
@@ -66,7 +66,7 @@ func MakeFileCache(cacheDir string, cacheLimitBytes int64) (*FileCache, error) {
 }
 
 // CreateLinkFromCache ...
-func (cache *FileCache) CreateLinkFromCacheExtra(filePath string, key common.SHA256Struct, extraKey common.SHA256Struct, destPath string) bool {
+func (cache *FileCache) CreateLinkFromCacheExtra(filePath string, key common.SHA256Struct, extraKey string, destPath string) bool {
 	cacheKey := CachedFileKey{path.Base(filePath), key, extraKey}
 	cache.mu.Lock()
 	cachedFile := cache.table[cacheKey]
@@ -98,11 +98,11 @@ func (cache *FileCache) CreateLinkFromCacheExtra(filePath string, key common.SHA
 }
 
 func (cache *FileCache) CreateLinkFromCache(filePath string, fileSHA256key common.SHA256Struct, destPath string) bool {
-	return cache.CreateLinkFromCacheExtra(filePath, fileSHA256key, common.SHA256Struct{}, destPath)
+	return cache.CreateLinkFromCacheExtra(filePath, fileSHA256key, "", destPath)
 }
 
 // SaveFileToCache ...
-func (cache *FileCache) SaveFileToCacheExtra(srcPath string, filePath string, key common.SHA256Struct, extraKey common.SHA256Struct, fileSize int64) (bool, error) {
+func (cache *FileCache) SaveFileToCacheExtra(srcPath string, filePath string, key common.SHA256Struct, extraKey string, fileSize int64) (bool, error) {
 	uniqueID := atomic.AddUint64(&cache.uniqueCounter, 1) - 1
 	fileName := path.Base(filePath)
 	cachedFileName := fmt.Sprintf("%X/%s.%X", uniqueID%DIR_SHARDS, fileName, uniqueID)
@@ -140,7 +140,7 @@ func (cache *FileCache) SaveFileToCacheExtra(srcPath string, filePath string, ke
 }
 
 func (cache *FileCache) SaveFileToCache(srcPath string, filePath string, fileSHA256 common.SHA256Struct, fileSize int64) (bool, error) {
-	return cache.SaveFileToCacheExtra(srcPath, filePath, fileSHA256, common.SHA256Struct{}, fileSize)
+	return cache.SaveFileToCacheExtra(srcPath, filePath, fileSHA256, "", fileSize)
 }
 
 // PurgeLastElementsIfRequired ...

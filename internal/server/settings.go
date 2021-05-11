@@ -9,7 +9,8 @@ type Settings struct {
 	LogFileName string
 	LogSeverity string
 
-	HeaderCacheLimit int64
+	SrcCacheLimit int64
+	ObjCacheLimit int64
 
 	StatsdAddress string
 }

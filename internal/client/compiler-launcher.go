@@ -65,7 +65,7 @@ func tryRemoteCompilation(localCompiler *LocalCompiler, settings *Settings) (ret
 	}
 	defer remoteCompiler.Clear()
 
-	if err = remoteCompiler.SetupEnvironment(filesMeta); err != nil {
+	if err = remoteCompiler.SetupEnvironment(filesMeta, settings.UseObjCache); err != nil {
 		return 0, nil, nil, err
 	}
 

@@ -12,6 +12,7 @@ type Settings struct {
 	Servers     []string
 	LogFileName string
 	LogSeverity string
+	UseObjCache bool
 }
 
 func getEnvValue(envVar string, key string) string {
@@ -40,6 +41,10 @@ func ReadClientSettings() *Settings {
 			settings.LogFileName = value
 		} else if value := getEnvValue(envVar, "POPCORN_LOG_SEVERITY="); len(value) != 0 {
 			settings.LogSeverity = value
+		} else if value := getEnvValue(envVar, "POPCORN_OBJ_CACHE="); len(value) != 0 {
+			settings.UseObjCache = (value == "1") ||
+				strings.EqualFold(value, "yes") || strings.EqualFold(value, "true") ||
+				strings.EqualFold(value, "on") || strings.EqualFold(value, "enable")
 		}
 	}
 

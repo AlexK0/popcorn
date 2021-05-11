@@ -24,10 +24,11 @@ type CompilationServer struct {
 
 	GRPCServer *grpc.Server
 
-	RemoteClients       *Clients
-	UploadingFiles      *FileTransferring
-	SystemHeaders       *SystemHeaderCache
-	PersistentFileCache *FileCache
+	RemoteClients  *Clients
+	UploadingFiles *FileTransferring
+	SystemHeaders  *SystemHeaderCache
+	SrcFileCache   *FileCache
+	ObjFileCache   *FileCache
 
 	ActiveSessions *Sessions
 
@@ -53,7 +54,7 @@ func (s *CompilationServer) StartCompilationSession(ctx context.Context, in *pb.
 			continue
 		}
 		_, filePathInWorkingDir := session.GetFilePathInWorkingDir(requiredFile.FilePath)
-		if s.PersistentFileCache.CreateLinkFromCache(requiredFile.FilePath, requiredFile.SHA256Struct, filePathInWorkingDir) {
+		if s.SrcFileCache.CreateLinkFromCache(requiredFile.FilePath, requiredFile.SHA256Struct, filePathInWorkingDir) {
 			continue
 		}
 		requiredFiles = append(requiredFiles, &pb.RequiredFile{FileIndex: uint32(index), Status: pb.RequiredStatus_FULL_COPY_REQUIRED})
@@ -122,7 +123,7 @@ func (s *CompilationServer) TransferFile(stream pb.CompilationService_TransferFi
 	_, filePathInWorkingDirAbs := session.GetFilePathInWorkingDir(fileMetadata.FilePath)
 	start := time.Now()
 	for {
-		if s.PersistentFileCache.CreateLinkFromCache(fileMetadata.FilePath, fileMetadata.SHA256Struct, filePathInWorkingDirAbs) {
+		if s.SrcFileCache.CreateLinkFromCache(fileMetadata.FilePath, fileMetadata.SHA256Struct, filePathInWorkingDirAbs) {
 			_ = stream.Send(&pb.TransferFileOut{Status: pb.RequiredStatus_DONE})
 			return callObserver.Finish()
 		}
@@ -163,7 +164,7 @@ func (s *CompilationServer) TransferFile(stream pb.CompilationService_TransferFi
 	}
 
 	_ = stream.Send(&pb.TransferFileOut{Status: pb.RequiredStatus_DONE})
-	_, _ = s.PersistentFileCache.SaveFileToCache(filePathInWorkingDirAbs, fileMetadata.FilePath, fileMetadata.SHA256Struct, fileMetadata.FileSize)
+	_, _ = s.SrcFileCache.SaveFileToCache(filePathInWorkingDirAbs, fileMetadata.FilePath, fileMetadata.SHA256Struct, fileMetadata.FileSize)
 
 	s.Stats.TransferredFiles.Increment()
 	common.LogInfo("File", fileMetadata.FilePath, "successfully transferred")
@@ -177,6 +178,39 @@ func (s *CompilationServer) closeSession(session *ClientSession, sessionID uint6
 	}
 }
 
+func (s *CompilationServer) performCompilation(session *ClientSession) (exitCode int, compilerStdout []byte, compilerStderr []byte) {
+	objSHA256 := common.SHA256Struct{}
+	objExtraKey := ""
+	if session.UseObjectCache {
+		objSHA256, objExtraKey = session.MakeObjectCacheKey()
+		if s.ObjFileCache.CreateLinkFromCacheExtra(session.OutObjectFilePath, objSHA256, objExtraKey, session.OutObjectFilePath) {
+			common.LogInfo("Get obj from cache", session.OutObjectFilePath)
+			return 0, nil, nil
+		}
+	}
+
+	compilerProc := exec.Command(session.Compiler, session.RemoveUnusedIncludeDirsAndGetCompilerArgs()...)
+	compilerProc.Dir = session.WorkingDir
+	var compilerStderrBuff, compilerStdoutBuff bytes.Buffer
+	compilerProc.Stderr = &compilerStderrBuff
+	compilerProc.Stdout = &compilerStdoutBuff
+
+	common.LogInfo("Launch compiler:", compilerProc.Args)
+	_ = compilerProc.Run()
+
+	exitCode = compilerProc.ProcessState.ExitCode()
+	compilerStdout = compilerStdoutBuff.Bytes()
+	compilerStderr = compilerStderrBuff.Bytes()
+
+	if exitCode == 0 && len(compilerStdout) == 0 && len(compilerStderr) == 0 && session.UseObjectCache {
+		if stat, err := os.Stat(session.OutObjectFilePath); err == nil {
+			_, _ = s.ObjFileCache.SaveFileToCacheExtra(session.OutObjectFilePath, session.OutObjectFilePath, objSHA256, objExtraKey, stat.Size())
+		}
+	}
+
+	return
+}
+
 func (s *CompilationServer) CompileSource(ctx context.Context, in *pb.CompileSourceRequest) (*pb.CompileSourceReply, error) {
 	callObserver := s.Stats.CompileSource.StartRPCCall()
 
@@ -187,28 +221,20 @@ func (s *CompilationServer) CompileSource(ctx context.Context, in *pb.CompileSou
 
 	defer s.closeSession(session, in.SessionID, in.CloseSessionAfterBuild)
 
-	compilerProc := exec.Command(session.Compiler, session.RemoveUnusedIncludeDirsAndGetCompilerArgs()...)
-	compilerProc.Dir = session.WorkingDir
-	var compilerStderr, compilerStdout bytes.Buffer
-	compilerProc.Stderr = &compilerStderr
-	compilerProc.Stdout = &compilerStdout
-
-	common.LogInfo("Launch compiler:", compilerProc.Args)
-	_ = compilerProc.Run()
-
+	exitCode, compilerStdout, compilerStderr := s.performCompilation(session)
 	var compiledSource []byte
 	var err error
-	if compilerProc.ProcessState.ExitCode() == 0 {
+	if exitCode == 0 {
 		if compiledSource, err = ioutil.ReadFile(session.OutObjectFilePath); err != nil {
 			return nil, callObserver.FinishWithError(fmt.Errorf("Can't read compiled source: %v", err))
 		}
 	}
 
 	return &pb.CompileSourceReply{
-		CompilerRetCode: int32(compilerProc.ProcessState.ExitCode()),
+		CompilerRetCode: int32(exitCode),
 		CompiledSource:  compiledSource,
-		CompilerStdout:  compilerStdout.Bytes(),
-		CompilerStderr:  compilerStderr.Bytes(),
+		CompilerStdout:  compilerStdout,
+		CompilerStderr:  compilerStderr,
 	}, callObserver.Finish()
 }
 
