@@ -3,7 +3,6 @@ package client
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 
 	pb "github.com/AlexK0/popcorn/internal/api/proto/v1"
@@ -73,7 +72,7 @@ func transferFileByChunks(path string, stream pb.CompilationService_TransferFile
 	}
 }
 
-func (compiler *RemoteCompiler) transferFile(path string, index int32, sha256Required bool, wg *common.WaitGroupWithError) {
+func (compiler *RemoteCompiler) transferFile(path string, index uint32, sha256Required bool, wg *common.WaitGroupWithError) {
 	var fileSHA256Message *pb.SHA256Message = nil
 	if sha256Required {
 		fileSHA256, err := common.GetFileSHA256(path)
@@ -135,16 +134,16 @@ func (compiler *RemoteCompiler) transferFile(path string, index int32, sha256Req
 	}
 }
 
-func (compiler *RemoteCompiler) SetupEnvironment(headers []*pb.FileMetadata) error {
+func (compiler *RemoteCompiler) SetupEnvironment(files []*pb.FileMetadata) error {
 	clientCacheStream, err := compiler.grpcClient.Client.StartCompilationSession(
 		compiler.grpcClient.CallContext,
 		&pb.StartCompilationSessionRequest{
-			ClientID:        compiler.clientID,
-			ClientUserName:  compiler.clientUserName,
-			SourceFilePath:  compiler.inFile,
-			Compiler:        compiler.name,
-			CompilerArgs:    compiler.remoteCmdArgs,
-			RequiredHeaders: headers,
+			ClientID:       compiler.clientID,
+			ClientUserName: compiler.clientUserName,
+			SourceFilePath: compiler.inFile,
+			Compiler:       compiler.name,
+			CompilerArgs:   compiler.remoteCmdArgs,
+			RequiredFiles:  files,
 		})
 	if err != nil {
 		return err
@@ -158,24 +157,19 @@ func (compiler *RemoteCompiler) SetupEnvironment(headers []*pb.FileMetadata) err
 	wg.Add(len(clientCacheStream.RequiredFiles))
 	for _, requiredFile := range clientCacheStream.RequiredFiles {
 		sem <- 1
-		go func(index int32, sendSHA256 bool) {
-			compiler.transferFile(headers[index].FilePath, index, sendSHA256, &wg)
+		go func(index uint32, sendSHA256 bool) {
+			compiler.transferFile(files[index].FilePath, index, sendSHA256, &wg)
 			<-sem
-		}(requiredFile.HeaderIndex, requiredFile.Status == pb.RequiredStatus_SHA256_REQUIRED)
+		}(requiredFile.FileIndex, requiredFile.Status == pb.RequiredStatus_SHA256_REQUIRED)
 	}
 	return wg.Wait()
 }
 
 func (compiler *RemoteCompiler) CompileSource() (retCode int, stdout []byte, stderr []byte, err error) {
-	sourceBody, err := ioutil.ReadFile(compiler.inFile)
-	if err != nil {
-		return 0, nil, nil, err
-	}
 	res, err := compiler.grpcClient.Client.CompileSource(
 		compiler.grpcClient.CallContext,
 		&pb.CompileSourceRequest{
 			SessionID:              compiler.sessionID,
-			SourceBody:             sourceBody,
 			CloseSessionAfterBuild: true,
 		})
 

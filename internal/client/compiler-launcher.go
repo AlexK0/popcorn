@@ -13,11 +13,11 @@ import (
 // ErrNoAvailableHosts ...
 var ErrNoAvailableHosts = errors.New("no available hosts for connection")
 
-func makeHeaderAsync(headerPath string, destMeta **pb.FileMetadata, wg *common.WaitGroupWithError) {
-	headerStat, err := os.Stat(headerPath)
+func makeFileMetaAsync(filePath string, destMeta **pb.FileMetadata, wg *common.WaitGroupWithError) {
+	headerStat, err := os.Stat(filePath)
 	if err == nil {
 		*destMeta = &pb.FileMetadata{
-			FilePath: headerPath,
+			FilePath: filePath,
 			MTime:    headerStat.ModTime().UnixNano(),
 			FileSize: headerStat.Size(),
 		}
@@ -25,15 +25,15 @@ func makeHeaderAsync(headerPath string, destMeta **pb.FileMetadata, wg *common.W
 	wg.Done(err)
 }
 
-func readHeadersMeta(headers []string) ([]*pb.FileMetadata, error) {
+func readFilesMeta(files []string) ([]*pb.FileMetadata, error) {
 	wg := common.WaitGroupWithError{}
-	wg.Add(len(headers))
-	cachedHeaders := make([]*pb.FileMetadata, len(headers))
-	for i, header := range headers {
-		go makeHeaderAsync(header, &cachedHeaders[i], &wg)
+	wg.Add(len(files))
+	filesMeta := make([]*pb.FileMetadata, len(files))
+	for i, file := range files {
+		go makeFileMetaAsync(file, &filesMeta[i], &wg)
 	}
 	err := wg.Wait()
-	return cachedHeaders, err
+	return filesMeta, err
 }
 
 func chooseServerNumber(localCompiler *LocalCompiler, hostsCount int) int {
@@ -48,12 +48,12 @@ func tryRemoteCompilation(localCompiler *LocalCompiler, settings *Settings) (ret
 		return 0, nil, nil, ErrNoAvailableHosts
 	}
 
-	headers, err := localCompiler.CollectHeadersAndUpdateIncludeDirs()
+	files, err := localCompiler.CollectFilesAndUpdateIncludeDirs()
 	if err != nil {
 		return 0, nil, nil, err
 	}
 
-	headersMeta, err := readHeadersMeta(headers)
+	filesMeta, err := readFilesMeta(files)
 	if err != nil {
 		return 0, nil, nil, err
 	}
@@ -65,7 +65,7 @@ func tryRemoteCompilation(localCompiler *LocalCompiler, settings *Settings) (ret
 	}
 	defer remoteCompiler.Clear()
 
-	if err = remoteCompiler.SetupEnvironment(headersMeta); err != nil {
+	if err = remoteCompiler.SetupEnvironment(filesMeta); err != nil {
 		return 0, nil, nil, err
 	}
 

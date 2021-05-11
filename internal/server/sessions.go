@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"os"
 	"path"
 	"strings"
 	"sync"
@@ -11,10 +12,9 @@ import (
 	pb "github.com/AlexK0/popcorn/internal/api/proto/v1"
 )
 
-type RequiredHeaderMetadata struct {
+type requiredFileMetadata struct {
 	*pb.FileMetadata
 	common.SHA256Struct
-	UseFromSystem bool
 }
 
 const POPCORN_SERVER_USER_DIR = "/popcorn-server-user/"
@@ -29,9 +29,8 @@ type ClientSession struct {
 	WorkingDir        string
 	UseObjectCache    bool
 
-	RequiredHeaders []RequiredHeaderMetadata
-
-	ClientInfo *Client
+	ClientInfo        *Client
+	RequiredFilesMeta []requiredFileMetadata
 }
 
 func (session *ClientSession) GetFilePathInWorkingDir(filePathOnClientFileSystem string) (relative string, absolute string) {
@@ -56,20 +55,9 @@ func (session *ClientSession) RemoveUnusedIncludeDirsAndGetCompilerArgs() []stri
 		arg := session.compilerArgs[i]
 		if (arg == "-I" || arg == "-isystem" || arg == "-iquote") && i+1 < len(session.compilerArgs) {
 			i++
-			includeDir := session.compilerArgs[i]
-			dirIsUsed := func() bool {
-				// TODO write something better?
-				for _, usedHeader := range session.RequiredHeaders {
-					if !usedHeader.UseFromSystem && strings.HasPrefix(usedHeader.FilePath, includeDir) {
-						return true
-					}
-				}
-				return false
-			}()
-
-			if dirIsUsed {
-				includeDir, _ = session.GetDirPathInWorkingDir(includeDir)
-				compilerArgs = append(compilerArgs, arg, includeDir)
+			includeDirRel, includeDirAbs := session.GetDirPathInWorkingDir(session.compilerArgs[i])
+			if _, err := os.Stat(includeDirAbs); !os.IsNotExist(err) {
+				compilerArgs = append(compilerArgs, arg, includeDirRel)
 			}
 			continue
 		}
@@ -93,17 +81,17 @@ func MakeSessions() *Sessions {
 
 func (s *Sessions) OpenNewSession(in *pb.StartCompilationSessionRequest, sessionsDir string, clientInfo *Client) (uint64, *ClientSession) {
 	newSession := &ClientSession{
-		clientUserDir:   "/" + in.ClientUserName + "/",
-		Compiler:        in.Compiler,
-		UseObjectCache:  in.UseObjectCache,
-		RequiredHeaders: make([]RequiredHeaderMetadata, 0, len(in.RequiredHeaders)),
-		ClientInfo:      clientInfo,
+		clientUserDir:     "/" + in.ClientUserName + "/",
+		RequiredFilesMeta: make([]requiredFileMetadata, 0, len(in.RequiredFiles)),
+		Compiler:          in.Compiler,
+		UseObjectCache:    in.UseObjectCache,
+		ClientInfo:        clientInfo,
 	}
-	for _, headerMetadata := range in.RequiredHeaders {
-		headerSHA256, _ := clientInfo.FileSHA256Cache.GetFileSHA256(headerMetadata.FilePath, headerMetadata.MTime, headerMetadata.FileSize)
-		newSession.RequiredHeaders = append(newSession.RequiredHeaders, RequiredHeaderMetadata{
-			FileMetadata: headerMetadata,
-			SHA256Struct: headerSHA256,
+	for _, meta := range in.RequiredFiles {
+		fileSHA256, _ := clientInfo.FileSHA256Cache.GetFileSHA256(meta.FilePath, meta.MTime, meta.FileSize)
+		newSession.RequiredFilesMeta = append(newSession.RequiredFilesMeta, requiredFileMetadata{
+			FileMetadata: meta,
+			SHA256Struct: fileSHA256,
 		})
 	}
 	s.mu.Lock()

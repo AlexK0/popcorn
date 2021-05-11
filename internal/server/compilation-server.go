@@ -43,21 +43,20 @@ func (s *CompilationServer) StartCompilationSession(ctx context.Context, in *pb.
 		return nil, callObserver.FinishWithError(fmt.Errorf("Can't create session working directory: %v", err))
 	}
 
-	requiredFiles := make([]*pb.RequiredFile, 0, 1+len(in.RequiredHeaders))
-	for index, requiredHeader := range session.RequiredHeaders {
-		if requiredHeader.SHA256Struct.IsEmpty() {
-			requiredFiles = append(requiredFiles, &pb.RequiredFile{HeaderIndex: int32(index), Status: pb.RequiredStatus_SHA256_REQUIRED})
+	requiredFiles := make([]*pb.RequiredFile, 0, 1+len(in.RequiredFiles))
+	for index, requiredFile := range session.RequiredFilesMeta {
+		if requiredFile.SHA256Struct.IsEmpty() {
+			requiredFiles = append(requiredFiles, &pb.RequiredFile{FileIndex: uint32(index), Status: pb.RequiredStatus_SHA256_REQUIRED})
 			continue
 		}
-		if s.SystemHeaders.IsSystemHeader(requiredHeader.FilePath, requiredHeader.FileSize, requiredHeader.SHA256Struct) {
-			requiredHeader.UseFromSystem = true
+		if s.SystemHeaders.IsSystemHeader(requiredFile.FilePath, requiredFile.FileSize, requiredFile.SHA256Struct) {
 			continue
 		}
-		_, headerPathInWorkingDir := session.GetFilePathInWorkingDir(requiredHeader.FilePath)
-		if s.PersistentFileCache.CreateLinkFromCache(requiredHeader.FilePath, requiredHeader.SHA256Struct, headerPathInWorkingDir) {
+		_, filePathInWorkingDir := session.GetFilePathInWorkingDir(requiredFile.FilePath)
+		if s.PersistentFileCache.CreateLinkFromCache(requiredFile.FilePath, requiredFile.SHA256Struct, filePathInWorkingDir) {
 			continue
 		}
-		requiredFiles = append(requiredFiles, &pb.RequiredFile{HeaderIndex: int32(index), Status: pb.RequiredStatus_FULL_COPY_REQUIRED})
+		requiredFiles = append(requiredFiles, &pb.RequiredFile{FileIndex: uint32(index), Status: pb.RequiredStatus_FULL_COPY_REQUIRED})
 	}
 
 	return &pb.StartCompilationSessionReply{
@@ -74,17 +73,17 @@ func saveFileFromStream(file *os.File, stream pb.CompilationService_TransferFile
 			break
 		}
 		if err != nil {
-			return 0, fmt.Errorf("Unexpected error on receiving header chunk: %v", err)
+			return 0, fmt.Errorf("Unexpected error on receiving file chunk: %v", err)
 		}
 		fileChunk := request.GetFileBodyChunk()
 		if fileChunk == nil {
-			return 0, fmt.Errorf("Header body chunk is expected")
+			return 0, fmt.Errorf("File body chunk is expected")
 		}
 		if len(fileChunk) == 0 {
 			break
 		}
 		if _, err = file.Write(fileChunk); err != nil {
-			return 0, fmt.Errorf("Can't write header chunk: %v", err)
+			return 0, fmt.Errorf("Can't write file chunk: %v", err)
 		}
 		fileSize += int64(len(fileChunk))
 	}
@@ -108,12 +107,11 @@ func (s *CompilationServer) TransferFile(stream pb.CompilationService_TransferFi
 		return callObserver.FinishWithError(fmt.Errorf("Unknown SessionID %d", metadata.SessionID))
 	}
 
-	fileMetadata := &session.RequiredHeaders[metadata.FileIndex]
+	fileMetadata := &session.RequiredFilesMeta[metadata.FileIndex]
 	if metadata.FileSHA256 != nil {
 		fileMetadata.SHA256Struct = common.SHA256MessageToSHA256Struct(metadata.FileSHA256)
 		session.ClientInfo.FileSHA256Cache.SetFileSHA256(fileMetadata.FilePath, fileMetadata.MTime, fileMetadata.FileSize, fileMetadata.SHA256Struct)
 		if s.SystemHeaders.IsSystemHeader(fileMetadata.FilePath, fileMetadata.FileSize, fileMetadata.SHA256Struct) {
-			fileMetadata.UseFromSystem = true
 			_ = stream.Send(&pb.TransferFileOut{Status: pb.RequiredStatus_DONE})
 			return callObserver.Finish()
 		}
@@ -121,10 +119,10 @@ func (s *CompilationServer) TransferFile(stream pb.CompilationService_TransferFi
 		return callObserver.FinishWithError(fmt.Errorf("SHA256 is required for %q", fileMetadata.FilePath))
 	}
 
-	_, headerPathInWorkingDir := session.GetFilePathInWorkingDir(fileMetadata.FilePath)
+	_, filePathInWorkingDirAbs := session.GetFilePathInWorkingDir(fileMetadata.FilePath)
 	start := time.Now()
 	for {
-		if s.PersistentFileCache.CreateLinkFromCache(fileMetadata.FilePath, fileMetadata.SHA256Struct, headerPathInWorkingDir) {
+		if s.PersistentFileCache.CreateLinkFromCache(fileMetadata.FilePath, fileMetadata.SHA256Struct, filePathInWorkingDirAbs) {
 			_ = stream.Send(&pb.TransferFileOut{Status: pb.RequiredStatus_DONE})
 			return callObserver.Finish()
 		}
@@ -143,15 +141,15 @@ func (s *CompilationServer) TransferFile(stream pb.CompilationService_TransferFi
 	}
 
 	defer s.UploadingFiles.FinishFileTransfer(fileMetadata.FilePath, fileMetadata.SHA256Struct)
-	headerFileTmp, err := common.OpenTempFile(headerPathInWorkingDir)
+	fileTmp, err := common.OpenTempFile(filePathInWorkingDirAbs)
 	if err != nil {
-		return callObserver.FinishWithError(fmt.Errorf("Can't open temp file for saving header: %v", err))
+		return callObserver.FinishWithError(fmt.Errorf("Can't open temp file for saving transferring file: %v", err))
 	}
 
-	transferredBytes, err := saveFileFromStream(headerFileTmp, stream)
-	headerFileTmp.Close()
+	transferredBytes, err := saveFileFromStream(fileTmp, stream)
+	fileTmp.Close()
 	clearTmpAndFinish := func(err error) error {
-		os.Remove(headerFileTmp.Name())
+		os.Remove(fileTmp.Name())
 		return callObserver.FinishWithError(err)
 	}
 	if err != nil {
@@ -160,12 +158,12 @@ func (s *CompilationServer) TransferFile(stream pb.CompilationService_TransferFi
 	if fileMetadata.FileSize != transferredBytes {
 		return clearTmpAndFinish(fmt.Errorf("Mismatch transferred bytes count: received %d, expected %d", transferredBytes, fileMetadata.FileSize))
 	}
-	if err = os.Rename(headerFileTmp.Name(), headerPathInWorkingDir); err != nil {
-		return clearTmpAndFinish(fmt.Errorf("Can't rename header temp file: %v", err))
+	if err = os.Rename(fileTmp.Name(), filePathInWorkingDirAbs); err != nil {
+		return clearTmpAndFinish(fmt.Errorf("Can't rename temp file: %v", err))
 	}
 
 	_ = stream.Send(&pb.TransferFileOut{Status: pb.RequiredStatus_DONE})
-	_, _ = s.PersistentFileCache.SaveFileToCache(headerPathInWorkingDir, fileMetadata.FilePath, fileMetadata.SHA256Struct, fileMetadata.FileSize)
+	_, _ = s.PersistentFileCache.SaveFileToCache(filePathInWorkingDirAbs, fileMetadata.FilePath, fileMetadata.SHA256Struct, fileMetadata.FileSize)
 
 	s.Stats.TransferredFiles.Increment()
 	common.LogInfo("File", fileMetadata.FilePath, "successfully transferred")
@@ -189,11 +187,6 @@ func (s *CompilationServer) CompileSource(ctx context.Context, in *pb.CompileSou
 
 	defer s.closeSession(session, in.SessionID, in.CloseSessionAfterBuild)
 
-	err := common.WriteFile(session.SourceFilePath, in.SourceBody)
-	if err != nil {
-		return nil, callObserver.FinishWithError(fmt.Errorf("Can't write source for compilation: %v", err))
-	}
-
 	compilerProc := exec.Command(session.Compiler, session.RemoveUnusedIncludeDirsAndGetCompilerArgs()...)
 	compilerProc.Dir = session.WorkingDir
 	var compilerStderr, compilerStdout bytes.Buffer
@@ -204,6 +197,7 @@ func (s *CompilationServer) CompileSource(ctx context.Context, in *pb.CompileSou
 	_ = compilerProc.Run()
 
 	var compiledSource []byte
+	var err error
 	if compilerProc.ProcessState.ExitCode() == 0 {
 		if compiledSource, err = ioutil.ReadFile(session.OutObjectFilePath); err != nil {
 			return nil, callObserver.FinishWithError(fmt.Errorf("Can't read compiled source: %v", err))

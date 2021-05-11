@@ -27,7 +27,6 @@ func isSourceFile(file string) bool {
 	return strings.HasSuffix(file, ".cpp") || strings.HasSuffix(file, ".cc") || strings.HasSuffix(file, ".cxx") || strings.HasSuffix(file, ".c")
 }
 
-// MakeLocalCompiler ...
 func MakeLocalCompiler(compilerArgs []string) *LocalCompiler {
 	compiler := LocalCompiler{}
 	var remoteCompilationAllowed = true
@@ -113,7 +112,7 @@ func MakeLocalCompiler(compilerArgs []string) *LocalCompiler {
 func extractHeaders(rawOut []byte) []string {
 	scanner := bufio.NewScanner(bytes.NewReader(rawOut))
 	scanner.Split(bufio.ScanWords)
-	headers := make([]string, 0, 10)
+	headers := make([]string, 0, 16)
 	for scanner.Scan() {
 		line := scanner.Text()
 		if line == "#pragma" && scanner.Scan() && scanner.Text() == "GCC" && scanner.Scan() && scanner.Text() == "pch_preprocess" && scanner.Scan() {
@@ -164,7 +163,6 @@ func (compiler *LocalCompiler) addIncludeDirsFrom(rawOut string) {
 	}
 }
 
-// MakeRemoteCmd ...
 func (compiler *LocalCompiler) MakeRemoteCmd(extraArgs ...string) []string {
 	compiler.dirsIquote = common.NormalizePaths(compiler.dirsIquote)
 	compiler.dirsI = common.NormalizePaths(compiler.dirsI)
@@ -185,8 +183,7 @@ func (compiler *LocalCompiler) MakeRemoteCmd(extraArgs ...string) []string {
 	return append(cmd, extraArgs...)
 }
 
-// CollectHeadersAndUpdateIncludeDirs ...
-func (compiler *LocalCompiler) CollectHeadersAndUpdateIncludeDirs() ([]string, error) {
+func (compiler *LocalCompiler) CollectFilesAndUpdateIncludeDirs() ([]string, error) {
 	cmd := compiler.MakeRemoteCmd(compiler.inFile, "-o", "/dev/stdout", "-M", "-Wp,-v")
 	compilerProc := exec.Command(compiler.name, cmd...)
 	var compilerStdout, compilerStderr bytes.Buffer
@@ -197,10 +194,9 @@ func (compiler *LocalCompiler) CollectHeadersAndUpdateIncludeDirs() ([]string, e
 	}
 
 	compiler.addIncludeDirsFrom(compilerStderr.String())
-	return extractHeaders(compilerStdout.Bytes()), nil
+	return append(extractHeaders(compilerStdout.Bytes()), compiler.inFile), nil
 }
 
-// CompileLocally ...
 func (compiler *LocalCompiler) CompileLocally() (retCode int, stdout []byte, stderr []byte) {
 	compilerProc := exec.Command(compiler.name, compiler.localCmdArgs...)
 	var compilerStdout, compilerStderr bytes.Buffer
