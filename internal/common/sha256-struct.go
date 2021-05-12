@@ -1,6 +1,7 @@
 package common
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
@@ -114,7 +115,7 @@ func GetFileSHA256(filePath string) (SHA256Struct, error) {
 
 	file_crc64 := uint64(0)
 	comments_crc64 := uint64(0)
-	if n, _ := fmt.Sscanf(string(headBuffer[:]), "//crc64:%x\n//crc64_with_comments:%x\n", &file_crc64, &comments_crc64); n == 2 {
+	if n, _ := fmt.Fscanf(bytes.NewReader(headBuffer[:]), "//crc64:%x\n//crc64_with_comments:%x\n", &file_crc64, &comments_crc64); n == 2 {
 		return SHA256Struct{B0_7: file_crc64, B8_15: comments_crc64}, nil
 	}
 
