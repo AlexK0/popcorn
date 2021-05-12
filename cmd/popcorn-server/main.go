@@ -14,7 +14,6 @@ import (
 	"google.golang.org/grpc"
 
 	pb "github.com/AlexK0/popcorn/internal/api/proto/v1"
-	_ "google.golang.org/grpc/encoding/gzip" // enables gzip compression for server
 )
 
 func cleanupWorkingDir(workingDir string) bool {
