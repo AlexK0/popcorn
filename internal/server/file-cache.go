@@ -44,7 +44,7 @@ type FileCache struct {
 	purgedElements int64
 }
 
-const DIR_SHARDS = 16
+const DIR_SHARDS = 256
 
 // MakeFileCache ...
 func MakeFileCache(cacheDir string, cacheLimitBytes int64) (*FileCache, error) {

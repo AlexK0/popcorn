@@ -58,6 +58,10 @@ func (s *CompilationServer) StartCompilationSession(ctx context.Context, in *pb.
 		requiredFiles = append(requiredFiles, &pb.RequiredFile{FileIndex: uint32(index), Status: pb.RequiredStatus_FULL_COPY_REQUIRED})
 	}
 
+	session.CompilationStartDependencies.Add(len(requiredFiles))
+	session.CompilationWaitFinish.Add(1)
+	go s.performCompilation(session)
+
 	return &pb.StartCompilationSessionReply{
 		SessionID:     sessionID,
 		RequiredFiles: requiredFiles,
@@ -111,6 +115,7 @@ func (s *CompilationServer) TransferFile(stream pb.CompilationService_TransferFi
 		fileMetadata.SHA256Struct = common.SHA256MessageToSHA256Struct(metadata.FileSHA256)
 		session.ClientInfo.FileSHA256Cache.SetFileSHA256(fileMetadata.FilePath, fileMetadata.MTime, fileMetadata.FileSize, fileMetadata.SHA256Struct)
 		if s.SystemHeaders.IsSystemHeader(fileMetadata.FilePath, fileMetadata.FileSize, fileMetadata.SHA256Struct) {
+			session.CompilationStartDependencies.Done()
 			_ = stream.Send(&pb.TransferFileReply{Status: pb.RequiredStatus_DONE})
 			return callObserver.Finish()
 		}
@@ -121,6 +126,7 @@ func (s *CompilationServer) TransferFile(stream pb.CompilationService_TransferFi
 	start := time.Now()
 	for {
 		if s.SrcFileCache.CreateLinkFromCache(fileMetadata.AbsPathInWorkingDir, fileMetadata.SHA256Struct) {
+			session.CompilationStartDependencies.Done()
 			_ = stream.Send(&pb.TransferFileReply{Status: pb.RequiredStatus_DONE})
 			return callObserver.Finish()
 		}
@@ -160,6 +166,7 @@ func (s *CompilationServer) TransferFile(stream pb.CompilationService_TransferFi
 		return clearTmpAndFinish(fmt.Errorf("Can't rename temp file: %v", err))
 	}
 
+	session.CompilationStartDependencies.Done()
 	_ = stream.Send(&pb.TransferFileReply{Status: pb.RequiredStatus_DONE})
 	_, _ = s.SrcFileCache.SaveFileToCache(fileMetadata.AbsPathInWorkingDir, fileMetadata.SHA256Struct, fileMetadata.FileSize)
 
@@ -175,14 +182,17 @@ func (s *CompilationServer) closeSession(session *ClientSession, sessionID uint6
 	}
 }
 
-func (s *CompilationServer) performCompilation(session *ClientSession) (exitCode int, compilerStdout []byte, compilerStderr []byte) {
+func (s *CompilationServer) performCompilation(session *ClientSession) {
+	session.CompilationStartDependencies.Wait()
+
 	objSHA256 := common.SHA256Struct{}
 	objExtraKey := ""
 	if session.UseObjectCache {
 		objSHA256, objExtraKey = session.MakeObjectCacheKey()
 		if s.ObjFileCache.CreateLinkFromCacheExtra(session.OutObjectFilePath, objSHA256, objExtraKey) {
 			common.LogInfo("Get obj from cache", session.OutObjectFilePath)
-			return 0, nil, nil
+			session.CompilationWaitFinish.Done()
+			return
 		}
 	}
 
@@ -195,17 +205,17 @@ func (s *CompilationServer) performCompilation(session *ClientSession) (exitCode
 	common.LogInfo("Launch compiler:", compilerProc.Args)
 	_ = compilerProc.Run()
 
-	exitCode = compilerProc.ProcessState.ExitCode()
-	compilerStdout = compilerStdoutBuff.Bytes()
-	compilerStderr = compilerStderrBuff.Bytes()
+	session.CompilerExitCode = compilerProc.ProcessState.ExitCode()
+	session.CompilerStdout = compilerStdoutBuff.Bytes()
+	session.CompilerStderr = compilerStderrBuff.Bytes()
 
-	if exitCode == 0 && len(compilerStdout) == 0 && len(compilerStderr) == 0 && session.UseObjectCache {
+	if session.CompilerExitCode == 0 && len(session.CompilerStdout) == 0 && len(session.CompilerStderr) == 0 && session.UseObjectCache {
 		if stat, err := os.Stat(session.OutObjectFilePath); err == nil {
 			_, _ = s.ObjFileCache.SaveFileToCacheExtra(session.OutObjectFilePath, objSHA256, objExtraKey, stat.Size())
 		}
 	}
 
-	return
+	session.CompilationWaitFinish.Done()
 }
 
 func (s *CompilationServer) CompileSource(in *pb.CompileSourceRequest, stream pb.CompilationService_CompileSourceServer) error {
@@ -218,8 +228,8 @@ func (s *CompilationServer) CompileSource(in *pb.CompileSourceRequest, stream pb
 
 	defer s.closeSession(session, in.SessionID, in.CloseSessionAfterBuild)
 
-	exitCode, compilerStdout, compilerStderr := s.performCompilation(session)
-	if exitCode == 0 {
+	session.CompilationWaitFinish.Wait()
+	if session.CompilerExitCode == 0 {
 		if err := common.TransferFileByChunks(session.OutObjectFilePath, func(chunk []byte) error {
 			if len(chunk) != 0 {
 				return stream.Send(&pb.CompileSourceReply{
@@ -237,9 +247,9 @@ func (s *CompilationServer) CompileSource(in *pb.CompileSourceRequest, stream pb
 	_ = stream.Send(&pb.CompileSourceReply{
 		Chunk: &pb.CompileSourceReply_Epilogue{
 			Epilogue: &pb.CompileSourceReply_StreamEpilogue{
-				CompilerRetCode: int32(exitCode),
-				CompilerStdout:  compilerStdout,
-				CompilerStderr:  compilerStderr,
+				CompilerRetCode: int32(session.CompilerExitCode),
+				CompilerStdout:  session.CompilerStdout,
+				CompilerStderr:  session.CompilerStderr,
 			},
 		}})
 	return nil

@@ -30,6 +30,13 @@ type ClientSession struct {
 
 	ClientInfo        *Client
 	RequiredFilesMeta []requiredFileMetadata
+
+	CompilationStartDependencies sync.WaitGroup
+	CompilationWaitFinish        sync.WaitGroup
+
+	CompilerExitCode int
+	CompilerStdout   []byte
+	CompilerStderr   []byte
 }
 
 func (session *ClientSession) MakeObjectCacheKey() (common.SHA256Struct, string) {
