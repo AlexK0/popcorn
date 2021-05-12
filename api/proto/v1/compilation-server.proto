@@ -9,7 +9,7 @@ service CompilationService {
     // Compilation api
     rpc StartCompilationSession(StartCompilationSessionRequest) returns (StartCompilationSessionReply) {}
     rpc TransferFile(stream TransferFileRequest) returns (stream TransferFileReply) {}
-    rpc CompileSource (CompileSourceRequest) returns (CompileSourceReply) {}
+    rpc CompileSource (CompileSourceRequest) returns (stream CompileSourceReply) {}
     rpc CloseSession(CloseSessionRequest) returns (CloseSessionReply) {}
 
     // Service api
@@ -77,10 +77,15 @@ message CompileSourceRequest {
 }
 
 message CompileSourceReply {
-    int32 CompilerRetCode = 1;
-    bytes CompiledSource = 2;
-    bytes CompilerStdout = 3;
-    bytes CompilerStderr = 4;
+    message StreamEpilogue {
+        int32 CompilerRetCode = 1;
+        bytes CompilerStdout = 2;
+        bytes CompilerStderr = 3;
+    }
+    oneof Chunk {
+        bytes CompiledObjChunk = 1;
+        StreamEpilogue Epilogue = 2;
+    }
 }
 
 message CloseSessionRequest {

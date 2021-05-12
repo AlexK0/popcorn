@@ -2,7 +2,6 @@ package client
 
 import (
 	"fmt"
-	"io"
 	"os"
 
 	pb "github.com/AlexK0/popcorn/internal/api/proto/v1"
@@ -46,32 +45,6 @@ func MakeRemoteCompiler(localCompiler *LocalCompiler, serverHostPort string) (*R
 	}, nil
 }
 
-func transferFileByChunks(path string, stream pb.CompilationService_TransferFileClient) error {
-	file, err := os.Open(path)
-	if err != nil {
-		return fmt.Errorf("Can't open file %q for sending: %v", path, err)
-	}
-	defer file.Close()
-
-	var buffer [128 * 1024]byte
-	for {
-		n, err := file.Read(buffer[:])
-		if err == io.EOF {
-			err = nil
-			n = 0
-		}
-		if err != nil {
-			return fmt.Errorf("Can't read file %q: %v", path, err)
-		}
-		if err = stream.Send(&pb.TransferFileRequest{Chunk: &pb.TransferFileRequest_FileBodyChunk{FileBodyChunk: buffer[:n]}}); err != nil {
-			return fmt.Errorf("Can't transfer file %q: %v", path, err)
-		}
-		if n == 0 {
-			return nil
-		}
-	}
-}
-
 func (compiler *RemoteCompiler) transferFile(path string, index uint32, sha256Required bool, wg *common.WaitGroupWithError) {
 	var fileSHA256Message *pb.SHA256Message = nil
 	if sha256Required {
@@ -110,7 +83,9 @@ func (compiler *RemoteCompiler) transferFile(path string, index uint32, sha256Re
 	}
 
 	if reply.Status == pb.RequiredStatus_FULL_COPY_REQUIRED {
-		if err = transferFileByChunks(path, stream); err != nil {
+		if err = common.TransferFileByChunks(path, func(chunk []byte) error {
+			return stream.Send(&pb.TransferFileRequest{Chunk: &pb.TransferFileRequest_FileBodyChunk{FileBodyChunk: chunk}})
+		}); err != nil {
 			wg.Done(err)
 			return
 		}
@@ -177,15 +152,53 @@ func (compiler *RemoteCompiler) CompileSource() (retCode int, stdout []byte, std
 	if err != nil {
 		return 0, nil, nil, err
 	}
+
+	defer func() { _ = res.CloseSend() }()
 	compiler.needCloseSession = false
 
-	if res.CompilerRetCode == 0 {
-		if err = common.WriteFile(compiler.outFile, res.CompiledSource); err != nil {
+	chunk, err := res.Recv()
+	if err != nil {
+		return 0, nil, nil, fmt.Errorf("Can't receive first chunk for compiled obj %q: %v", compiler.outFile, err)
+	}
+	epilogue := chunk.GetEpilogue()
+	if epilogue == nil {
+		tmpFile, err := common.OpenTempFile(compiler.outFile)
+		if err != nil {
+			return 0, nil, nil, fmt.Errorf("Can't create temp file for saving %q: %v", compiler.outFile, err)
+		}
+
+		clearTmp := func(err error) (int, []byte, []byte, error) {
+			tmpFile.Close()
+			os.Remove(tmpFile.Name())
 			return 0, nil, nil, err
+		}
+
+		for {
+			if err != nil {
+				return clearTmp(fmt.Errorf("Can't receive compiled obj %q: %v", compiler.outFile, err))
+			}
+			if fileChunk := chunk.GetCompiledObjChunk(); len(fileChunk) != 0 {
+				if _, err = tmpFile.Write(fileChunk); err != nil {
+					return clearTmp(fmt.Errorf("Can't save chunk of compiled obj %q: %v", compiler.outFile, err))
+				}
+				chunk, err = res.Recv()
+			} else {
+				epilogue = chunk.GetEpilogue()
+				break
+			}
+		}
+
+		tmpFile.Close()
+		if err = os.Rename(tmpFile.Name(), compiler.outFile); err != nil {
+			return clearTmp(fmt.Errorf("Can't rename compiled obj %q: %v", compiler.outFile, err))
 		}
 	}
 
-	return int(res.CompilerRetCode), res.CompilerStderr, res.CompilerStdout, nil
+	if epilogue == nil {
+		return 0, nil, nil, fmt.Errorf("Epilogue for %q is missed", compiler.outFile)
+	}
+
+	return int(epilogue.CompilerRetCode), epilogue.CompilerStderr, epilogue.CompilerStdout, nil
 }
 
 func (compiler *RemoteCompiler) Clear() {

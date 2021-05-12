@@ -1,6 +1,8 @@
 package common
 
 import (
+	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -47,4 +49,30 @@ func NormalizePaths(paths []string) []string {
 		}
 	}
 	return result
+}
+
+func TransferFileByChunks(path string, transferCallback func(chunk []byte) error) error {
+	file, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("Can't open file %q: %v", path, err)
+	}
+	defer file.Close()
+
+	var buffer [128 * 1024]byte
+	for {
+		n, err := file.Read(buffer[:])
+		if err == io.EOF {
+			err = nil
+			n = 0
+		}
+		if err != nil {
+			return fmt.Errorf("Can't read file %q: %v", path, err)
+		}
+		if err = transferCallback(buffer[:n]); err != nil {
+			return fmt.Errorf("Can't transfer file %q: %v", path, err)
+		}
+		if n == 0 {
+			return nil
+		}
+	}
 }

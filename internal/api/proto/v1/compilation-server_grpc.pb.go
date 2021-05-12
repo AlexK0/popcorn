@@ -21,7 +21,7 @@ type CompilationServiceClient interface {
 	// Compilation api
 	StartCompilationSession(ctx context.Context, in *StartCompilationSessionRequest, opts ...grpc.CallOption) (*StartCompilationSessionReply, error)
 	TransferFile(ctx context.Context, opts ...grpc.CallOption) (CompilationService_TransferFileClient, error)
-	CompileSource(ctx context.Context, in *CompileSourceRequest, opts ...grpc.CallOption) (*CompileSourceReply, error)
+	CompileSource(ctx context.Context, in *CompileSourceRequest, opts ...grpc.CallOption) (CompilationService_CompileSourceClient, error)
 	CloseSession(ctx context.Context, in *CloseSessionRequest, opts ...grpc.CallOption) (*CloseSessionReply, error)
 	// Service api
 	Status(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (*StatusReply, error)
@@ -75,13 +75,36 @@ func (x *compilationServiceTransferFileClient) Recv() (*TransferFileReply, error
 	return m, nil
 }
 
-func (c *compilationServiceClient) CompileSource(ctx context.Context, in *CompileSourceRequest, opts ...grpc.CallOption) (*CompileSourceReply, error) {
-	out := new(CompileSourceReply)
-	err := c.cc.Invoke(ctx, "/popcorn.CompilationService/CompileSource", in, out, opts...)
+func (c *compilationServiceClient) CompileSource(ctx context.Context, in *CompileSourceRequest, opts ...grpc.CallOption) (CompilationService_CompileSourceClient, error) {
+	stream, err := c.cc.NewStream(ctx, &CompilationService_ServiceDesc.Streams[1], "/popcorn.CompilationService/CompileSource", opts...)
 	if err != nil {
 		return nil, err
 	}
-	return out, nil
+	x := &compilationServiceCompileSourceClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type CompilationService_CompileSourceClient interface {
+	Recv() (*CompileSourceReply, error)
+	grpc.ClientStream
+}
+
+type compilationServiceCompileSourceClient struct {
+	grpc.ClientStream
+}
+
+func (x *compilationServiceCompileSourceClient) Recv() (*CompileSourceReply, error) {
+	m := new(CompileSourceReply)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
 }
 
 func (c *compilationServiceClient) CloseSession(ctx context.Context, in *CloseSessionRequest, opts ...grpc.CallOption) (*CloseSessionReply, error) {
@@ -109,7 +132,7 @@ type CompilationServiceServer interface {
 	// Compilation api
 	StartCompilationSession(context.Context, *StartCompilationSessionRequest) (*StartCompilationSessionReply, error)
 	TransferFile(CompilationService_TransferFileServer) error
-	CompileSource(context.Context, *CompileSourceRequest) (*CompileSourceReply, error)
+	CompileSource(*CompileSourceRequest, CompilationService_CompileSourceServer) error
 	CloseSession(context.Context, *CloseSessionRequest) (*CloseSessionReply, error)
 	// Service api
 	Status(context.Context, *StatusRequest) (*StatusReply, error)
@@ -126,8 +149,8 @@ func (UnimplementedCompilationServiceServer) StartCompilationSession(context.Con
 func (UnimplementedCompilationServiceServer) TransferFile(CompilationService_TransferFileServer) error {
 	return status.Errorf(codes.Unimplemented, "method TransferFile not implemented")
 }
-func (UnimplementedCompilationServiceServer) CompileSource(context.Context, *CompileSourceRequest) (*CompileSourceReply, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method CompileSource not implemented")
+func (UnimplementedCompilationServiceServer) CompileSource(*CompileSourceRequest, CompilationService_CompileSourceServer) error {
+	return status.Errorf(codes.Unimplemented, "method CompileSource not implemented")
 }
 func (UnimplementedCompilationServiceServer) CloseSession(context.Context, *CloseSessionRequest) (*CloseSessionReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CloseSession not implemented")
@@ -192,22 +215,25 @@ func (x *compilationServiceTransferFileServer) Recv() (*TransferFileRequest, err
 	return m, nil
 }
 
-func _CompilationService_CompileSource_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CompileSourceRequest)
-	if err := dec(in); err != nil {
-		return nil, err
+func _CompilationService_CompileSource_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(CompileSourceRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
 	}
-	if interceptor == nil {
-		return srv.(CompilationServiceServer).CompileSource(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/popcorn.CompilationService/CompileSource",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(CompilationServiceServer).CompileSource(ctx, req.(*CompileSourceRequest))
-	}
-	return interceptor(ctx, in, info, handler)
+	return srv.(CompilationServiceServer).CompileSource(m, &compilationServiceCompileSourceServer{stream})
+}
+
+type CompilationService_CompileSourceServer interface {
+	Send(*CompileSourceReply) error
+	grpc.ServerStream
+}
+
+type compilationServiceCompileSourceServer struct {
+	grpc.ServerStream
+}
+
+func (x *compilationServiceCompileSourceServer) Send(m *CompileSourceReply) error {
+	return x.ServerStream.SendMsg(m)
 }
 
 func _CompilationService_CloseSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -258,10 +284,6 @@ var CompilationService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _CompilationService_StartCompilationSession_Handler,
 		},
 		{
-			MethodName: "CompileSource",
-			Handler:    _CompilationService_CompileSource_Handler,
-		},
-		{
 			MethodName: "CloseSession",
 			Handler:    _CompilationService_CloseSession_Handler,
 		},
@@ -276,6 +298,11 @@ var CompilationService_ServiceDesc = grpc.ServiceDesc{
 			Handler:       _CompilationService_TransferFile_Handler,
 			ServerStreams: true,
 			ClientStreams: true,
+		},
+		{
+			StreamName:    "CompileSource",
+			Handler:       _CompilationService_CompileSource_Handler,
+			ServerStreams: true,
 		},
 	},
 	Metadata: "api/proto/v1/compilation-server.proto",

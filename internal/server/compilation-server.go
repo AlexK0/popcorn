@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"time"
@@ -209,31 +208,41 @@ func (s *CompilationServer) performCompilation(session *ClientSession) (exitCode
 	return
 }
 
-func (s *CompilationServer) CompileSource(ctx context.Context, in *pb.CompileSourceRequest) (*pb.CompileSourceReply, error) {
+func (s *CompilationServer) CompileSource(in *pb.CompileSourceRequest, stream pb.CompilationService_CompileSourceServer) error {
 	callObserver := s.Stats.CompileSource.StartRPCCall()
 
 	session := s.ActiveSessions.GetSession(in.SessionID)
 	if session == nil {
-		return nil, callObserver.FinishWithError(fmt.Errorf("Unknown SessionID %d", in.SessionID))
+		return callObserver.FinishWithError(fmt.Errorf("Unknown SessionID %d", in.SessionID))
 	}
 
 	defer s.closeSession(session, in.SessionID, in.CloseSessionAfterBuild)
 
 	exitCode, compilerStdout, compilerStderr := s.performCompilation(session)
-	var compiledSource []byte
-	var err error
 	if exitCode == 0 {
-		if compiledSource, err = ioutil.ReadFile(session.OutObjectFilePath); err != nil {
-			return nil, callObserver.FinishWithError(fmt.Errorf("Can't read compiled source: %v", err))
+		if err := common.TransferFileByChunks(session.OutObjectFilePath, func(chunk []byte) error {
+			if len(chunk) != 0 {
+				return stream.Send(&pb.CompileSourceReply{
+					Chunk: &pb.CompileSourceReply_CompiledObjChunk{
+						CompiledObjChunk: chunk,
+					},
+				})
+			}
+			return nil
+		}); err != nil {
+			return callObserver.FinishWithError(fmt.Errorf("Can't send compiled source: %v", err))
 		}
 	}
 
-	return &pb.CompileSourceReply{
-		CompilerRetCode: int32(exitCode),
-		CompiledSource:  compiledSource,
-		CompilerStdout:  compilerStdout,
-		CompilerStderr:  compilerStderr,
-	}, callObserver.Finish()
+	_ = stream.Send(&pb.CompileSourceReply{
+		Chunk: &pb.CompileSourceReply_Epilogue{
+			Epilogue: &pb.CompileSourceReply_StreamEpilogue{
+				CompilerRetCode: int32(exitCode),
+				CompilerStdout:  compilerStdout,
+				CompilerStderr:  compilerStderr,
+			},
+		}})
+	return nil
 }
 
 func (s *CompilationServer) CloseSession(ctx context.Context, in *pb.CloseSessionRequest) (*pb.CloseSessionReply, error) {
