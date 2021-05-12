@@ -15,9 +15,9 @@ import (
 type requiredFileMetadata struct {
 	*pb.FileMetadata
 	common.SHA256Struct
+	AbsPathInWorkingDir string
+	relPathInWorkingDir string
 }
-
-const POPCORN_SERVER_USER_DIR = "/popcorn-server-user/"
 
 type ClientSession struct {
 	clientUserDir string
@@ -49,7 +49,9 @@ func (session *ClientSession) MakeObjectCacheKey() (common.SHA256Struct, string)
 
 	keyBuilder.WriteString(";depends-")
 	for _, requiredFile := range session.RequiredFilesMeta {
-		fmt.Fprintf(&keyBuilder, "f:%s/0x%X/0x%X/0x%X/0x%X/", requiredFile.FilePath, requiredFile.B0_7, requiredFile.B8_15, requiredFile.B16_23, requiredFile.B24_31)
+		keyBuilder.WriteString("f:")
+		keyBuilder.WriteString(requiredFile.relPathInWorkingDir)
+		fmt.Fprintf(&keyBuilder, "{0x%X/0x%X/0x%X/0x%X}", requiredFile.B0_7, requiredFile.B8_15, requiredFile.B16_23, requiredFile.B24_31)
 		sha256xor.B0_7 ^= requiredFile.B0_7
 		sha256xor.B8_15 ^= requiredFile.B8_15
 		sha256xor.B16_23 ^= requiredFile.B16_23
@@ -58,7 +60,8 @@ func (session *ClientSession) MakeObjectCacheKey() (common.SHA256Struct, string)
 	return sha256xor, keyBuilder.String()
 }
 
-func (session *ClientSession) GetFilePathInWorkingDir(filePathOnClientFileSystem string) (relative string, absolute string) {
+func (session *ClientSession) getPathInWorkingDir(filePathOnClientFileSystem string) (relative string, absolute string) {
+	const POPCORN_SERVER_USER_DIR = "/popcorn-server-user/"
 	if session.UseObjectCache {
 		filePathOnClientFileSystem = strings.Replace(filePathOnClientFileSystem, session.clientUserDir, POPCORN_SERVER_USER_DIR, 1)
 	}
@@ -67,20 +70,13 @@ func (session *ClientSession) GetFilePathInWorkingDir(filePathOnClientFileSystem
 	return
 }
 
-func (session *ClientSession) GetDirPathInWorkingDir(dirPathOnClientFileSystem string) (relative string, absolute string) {
-	if !strings.HasSuffix(dirPathOnClientFileSystem, "/") {
-		dirPathOnClientFileSystem += "/"
-	}
-	return session.GetFilePathInWorkingDir(dirPathOnClientFileSystem)
-}
-
 func (session *ClientSession) RemoveUnusedIncludeDirsAndGetCompilerArgs() []string {
 	compilerArgs := make([]string, 0, len(session.compilerArgs))
 	for i := 0; i < len(session.compilerArgs); i++ {
 		arg := session.compilerArgs[i]
 		if (arg == "-I" || arg == "-isystem" || arg == "-iquote") && i+1 < len(session.compilerArgs) {
 			i++
-			includeDirRel, includeDirAbs := session.GetDirPathInWorkingDir(session.compilerArgs[i])
+			includeDirRel, includeDirAbs := session.getPathInWorkingDir(session.compilerArgs[i])
 			if _, err := os.Stat(includeDirAbs); !os.IsNotExist(err) {
 				compilerArgs = append(compilerArgs, arg, includeDirRel)
 			}
@@ -107,18 +103,12 @@ func MakeSessions() *Sessions {
 func (s *Sessions) OpenNewSession(in *pb.StartCompilationSessionRequest, sessionsDir string, clientInfo *Client) (uint64, *ClientSession) {
 	newSession := &ClientSession{
 		clientUserDir:     "/" + in.ClientUserName + "/",
-		RequiredFilesMeta: make([]requiredFileMetadata, 0, len(in.RequiredFiles)),
+		RequiredFilesMeta: make([]requiredFileMetadata, len(in.RequiredFiles)),
 		Compiler:          in.Compiler,
 		UseObjectCache:    in.UseObjectCache,
 		ClientInfo:        clientInfo,
 	}
-	for _, meta := range in.RequiredFiles {
-		fileSHA256, _ := clientInfo.FileSHA256Cache.GetFileSHA256(meta.FilePath, meta.MTime, meta.FileSize)
-		newSession.RequiredFilesMeta = append(newSession.RequiredFilesMeta, requiredFileMetadata{
-			FileMetadata: meta,
-			SHA256Struct: fileSHA256,
-		})
-	}
+
 	s.mu.Lock()
 	sessionID := s.sessionsCounter
 	s.sessionsCounter++
@@ -127,8 +117,15 @@ func (s *Sessions) OpenNewSession(in *pb.StartCompilationSessionRequest, session
 
 	newSession.WorkingDir = path.Join(sessionsDir, fmt.Sprint(sessionID))
 
-	inFileRel, _ := newSession.GetFilePathInWorkingDir(in.SourceFilePath)
-	outFileRel, outFileAbs := newSession.GetFilePathInWorkingDir(in.SourceFilePath + ".o")
+	for index, meta := range in.RequiredFiles {
+		fileMetadata := &newSession.RequiredFilesMeta[index]
+		fileMetadata.FileMetadata = meta
+		fileMetadata.SHA256Struct, _ = clientInfo.FileSHA256Cache.GetFileSHA256(meta.FilePath, meta.MTime, meta.FileSize)
+		fileMetadata.relPathInWorkingDir, fileMetadata.AbsPathInWorkingDir = newSession.getPathInWorkingDir(meta.FilePath)
+	}
+
+	inFileRel, _ := newSession.getPathInWorkingDir(in.SourceFilePath)
+	outFileRel, outFileAbs := newSession.getPathInWorkingDir(in.SourceFilePath + ".o")
 
 	newSession.OutObjectFilePath = outFileAbs
 	newSession.compilerArgs = append(in.CompilerArgs, inFileRel, "-o", outFileRel)
@@ -150,7 +147,7 @@ func (s *Sessions) CloseSession(sessionID uint64) {
 
 func (s *Sessions) ActiveSessions() int64 {
 	s.mu.RLock()
-	acriveSessions := len(s.sessions)
+	activeSessions := len(s.sessions)
 	s.mu.RUnlock()
-	return int64(acriveSessions)
+	return int64(activeSessions)
 }

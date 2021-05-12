@@ -44,17 +44,16 @@ func (s *CompilationServer) StartCompilationSession(ctx context.Context, in *pb.
 		return nil, callObserver.FinishWithError(fmt.Errorf("Can't create session working directory: %v", err))
 	}
 
-	requiredFiles := make([]*pb.RequiredFile, 0, 1+len(in.RequiredFiles))
-	for index, requiredFile := range session.RequiredFilesMeta {
-		if requiredFile.SHA256Struct.IsEmpty() {
+	requiredFiles := make([]*pb.RequiredFile, 0, len(in.RequiredFiles))
+	for index, fileMetadata := range session.RequiredFilesMeta {
+		if fileMetadata.SHA256Struct.IsEmpty() {
 			requiredFiles = append(requiredFiles, &pb.RequiredFile{FileIndex: uint32(index), Status: pb.RequiredStatus_SHA256_REQUIRED})
 			continue
 		}
-		if s.SystemHeaders.IsSystemHeader(requiredFile.FilePath, requiredFile.FileSize, requiredFile.SHA256Struct) {
+		if s.SystemHeaders.IsSystemHeader(fileMetadata.FilePath, fileMetadata.FileSize, fileMetadata.SHA256Struct) {
 			continue
 		}
-		_, filePathInWorkingDir := session.GetFilePathInWorkingDir(requiredFile.FilePath)
-		if s.SrcFileCache.CreateLinkFromCache(requiredFile.FilePath, requiredFile.SHA256Struct, filePathInWorkingDir) {
+		if s.SrcFileCache.CreateLinkFromCache(fileMetadata.AbsPathInWorkingDir, fileMetadata.SHA256Struct) {
 			continue
 		}
 		requiredFiles = append(requiredFiles, &pb.RequiredFile{FileIndex: uint32(index), Status: pb.RequiredStatus_FULL_COPY_REQUIRED})
@@ -120,10 +119,9 @@ func (s *CompilationServer) TransferFile(stream pb.CompilationService_TransferFi
 		return callObserver.FinishWithError(fmt.Errorf("SHA256 is required for %q", fileMetadata.FilePath))
 	}
 
-	_, filePathInWorkingDirAbs := session.GetFilePathInWorkingDir(fileMetadata.FilePath)
 	start := time.Now()
 	for {
-		if s.SrcFileCache.CreateLinkFromCache(fileMetadata.FilePath, fileMetadata.SHA256Struct, filePathInWorkingDirAbs) {
+		if s.SrcFileCache.CreateLinkFromCache(fileMetadata.AbsPathInWorkingDir, fileMetadata.SHA256Struct) {
 			_ = stream.Send(&pb.TransferFileOut{Status: pb.RequiredStatus_DONE})
 			return callObserver.Finish()
 		}
@@ -142,7 +140,7 @@ func (s *CompilationServer) TransferFile(stream pb.CompilationService_TransferFi
 	}
 
 	defer s.UploadingFiles.FinishFileTransfer(fileMetadata.FilePath, fileMetadata.SHA256Struct)
-	fileTmp, err := common.OpenTempFile(filePathInWorkingDirAbs)
+	fileTmp, err := common.OpenTempFile(fileMetadata.AbsPathInWorkingDir)
 	if err != nil {
 		return callObserver.FinishWithError(fmt.Errorf("Can't open temp file for saving transferring file: %v", err))
 	}
@@ -159,12 +157,12 @@ func (s *CompilationServer) TransferFile(stream pb.CompilationService_TransferFi
 	if fileMetadata.FileSize != transferredBytes {
 		return clearTmpAndFinish(fmt.Errorf("Mismatch transferred bytes count: received %d, expected %d", transferredBytes, fileMetadata.FileSize))
 	}
-	if err = os.Rename(fileTmp.Name(), filePathInWorkingDirAbs); err != nil {
+	if err = os.Rename(fileTmp.Name(), fileMetadata.AbsPathInWorkingDir); err != nil {
 		return clearTmpAndFinish(fmt.Errorf("Can't rename temp file: %v", err))
 	}
 
 	_ = stream.Send(&pb.TransferFileOut{Status: pb.RequiredStatus_DONE})
-	_, _ = s.SrcFileCache.SaveFileToCache(filePathInWorkingDirAbs, fileMetadata.FilePath, fileMetadata.SHA256Struct, fileMetadata.FileSize)
+	_, _ = s.SrcFileCache.SaveFileToCache(fileMetadata.AbsPathInWorkingDir, fileMetadata.SHA256Struct, fileMetadata.FileSize)
 
 	s.Stats.TransferredFiles.Increment()
 	common.LogInfo("File", fileMetadata.FilePath, "successfully transferred")
@@ -183,7 +181,7 @@ func (s *CompilationServer) performCompilation(session *ClientSession) (exitCode
 	objExtraKey := ""
 	if session.UseObjectCache {
 		objSHA256, objExtraKey = session.MakeObjectCacheKey()
-		if s.ObjFileCache.CreateLinkFromCacheExtra(session.OutObjectFilePath, objSHA256, objExtraKey, session.OutObjectFilePath) {
+		if s.ObjFileCache.CreateLinkFromCacheExtra(session.OutObjectFilePath, objSHA256, objExtraKey) {
 			common.LogInfo("Get obj from cache", session.OutObjectFilePath)
 			return 0, nil, nil
 		}
@@ -204,7 +202,7 @@ func (s *CompilationServer) performCompilation(session *ClientSession) (exitCode
 
 	if exitCode == 0 && len(compilerStdout) == 0 && len(compilerStderr) == 0 && session.UseObjectCache {
 		if stat, err := os.Stat(session.OutObjectFilePath); err == nil {
-			_, _ = s.ObjFileCache.SaveFileToCacheExtra(session.OutObjectFilePath, session.OutObjectFilePath, objSHA256, objExtraKey, stat.Size())
+			_, _ = s.ObjFileCache.SaveFileToCacheExtra(session.OutObjectFilePath, objSHA256, objExtraKey, stat.Size())
 		}
 	}
 

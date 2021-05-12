@@ -66,8 +66,8 @@ func MakeFileCache(cacheDir string, cacheLimitBytes int64) (*FileCache, error) {
 }
 
 // CreateLinkFromCache ...
-func (cache *FileCache) CreateLinkFromCacheExtra(filePath string, key common.SHA256Struct, extraKey string, destPath string) bool {
-	cacheKey := CachedFileKey{path.Base(filePath), key, extraKey}
+func (cache *FileCache) CreateLinkFromCacheExtra(destPath string, key common.SHA256Struct, extraKey string) bool {
+	cacheKey := CachedFileKey{path.Base(destPath), key, extraKey}
 	cache.mu.Lock()
 	cachedFile := cache.table[cacheKey]
 	if cachedFile.lruNode != nil && cachedFile.lruNode != cache.lruHead {
@@ -97,14 +97,14 @@ func (cache *FileCache) CreateLinkFromCacheExtra(filePath string, key common.SHA
 	return os.Link(cachedFile.pathInCache, destPath) == nil
 }
 
-func (cache *FileCache) CreateLinkFromCache(filePath string, fileSHA256key common.SHA256Struct, destPath string) bool {
-	return cache.CreateLinkFromCacheExtra(filePath, fileSHA256key, "", destPath)
+func (cache *FileCache) CreateLinkFromCache(destPath string, fileSHA256key common.SHA256Struct) bool {
+	return cache.CreateLinkFromCacheExtra(destPath, fileSHA256key, "")
 }
 
 // SaveFileToCache ...
-func (cache *FileCache) SaveFileToCacheExtra(srcPath string, filePath string, key common.SHA256Struct, extraKey string, fileSize int64) (bool, error) {
+func (cache *FileCache) SaveFileToCacheExtra(srcPath string, key common.SHA256Struct, extraKey string, fileSize int64) (bool, error) {
 	uniqueID := atomic.AddUint64(&cache.uniqueCounter, 1) - 1
-	fileName := path.Base(filePath)
+	fileName := path.Base(srcPath)
 	cachedFileName := fmt.Sprintf("%X/%s.%X", uniqueID%DIR_SHARDS, fileName, uniqueID)
 	cachedFilePath := path.Join(cache.cacheDir, cachedFileName)
 
@@ -139,8 +139,8 @@ func (cache *FileCache) SaveFileToCacheExtra(srcPath string, filePath string, ke
 	return !exists, nil
 }
 
-func (cache *FileCache) SaveFileToCache(srcPath string, filePath string, fileSHA256 common.SHA256Struct, fileSize int64) (bool, error) {
-	return cache.SaveFileToCacheExtra(srcPath, filePath, fileSHA256, "", fileSize)
+func (cache *FileCache) SaveFileToCache(srcPath string, fileSHA256 common.SHA256Struct, fileSize int64) (bool, error) {
+	return cache.SaveFileToCacheExtra(srcPath, fileSHA256, "", fileSize)
 }
 
 // PurgeLastElementsIfRequired ...

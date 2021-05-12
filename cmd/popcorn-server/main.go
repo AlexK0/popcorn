@@ -45,7 +45,7 @@ func main() {
 	flag.StringVar(&settings.LogFileName, "log-filename", "", "Logger file.")
 	flag.StringVar(&settings.LogSeverity, "log-severity", common.WarningSeverity, "Logger severity level.")
 	flag.Int64Var(&settings.SrcCacheLimit, "src-cache-limit", 512*1024*1024, "Header and source cache limit in bytes.")
-	flag.Int64Var(&settings.ObjCacheLimit, "obj-cache-limit", 10*1024*1024*1024, "Compiled object cache limit in bytes.")
+	flag.Int64Var(&settings.ObjCacheLimit, "obj-cache-limit", 1024*1024*1024, "Compiled object cache limit in bytes.")
 	flag.StringVar(&settings.StatsdAddress, "statsd", "", "Statsd address.")
 
 	flag.Parse()
