@@ -53,7 +53,7 @@ func transferFileByChunks(path string, stream pb.CompilationService_TransferFile
 	}
 	defer file.Close()
 
-	var buffer [256 * 1024]byte
+	var buffer [128 * 1024]byte
 	for {
 		n, err := file.Read(buffer[:])
 		if err == io.EOF {
@@ -153,7 +153,7 @@ func (compiler *RemoteCompiler) SetupEnvironment(files []*pb.FileMetadata, useOb
 	compiler.sessionID = clientCacheStream.SessionID
 	compiler.needCloseSession = true
 
-	sem := make(chan int, 8)
+	sem := make(chan int, 6)
 	wg := common.WaitGroupWithError{}
 	wg.Add(len(clientCacheStream.RequiredFiles))
 	for _, requiredFile := range clientCacheStream.RequiredFiles {

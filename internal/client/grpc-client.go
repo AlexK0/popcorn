@@ -19,7 +19,11 @@ type GRPCClient struct {
 
 // MakeGRPCClient ...
 func MakeGRPCClient(serverHostPort string) (*GRPCClient, error) {
-	connection, err := grpc.Dial(serverHostPort,
+	connectionContext, connectionCancel := context.WithTimeout(context.Background(), time.Second*3)
+	defer connectionCancel()
+	connection, err := grpc.DialContext(
+		connectionContext,
+		serverHostPort,
 		grpc.WithInsecure(),
 		grpc.WithBlock(),
 		grpc.WithDefaultCallOptions(
@@ -30,7 +34,7 @@ func MakeGRPCClient(serverHostPort string) (*GRPCClient, error) {
 		return nil, err
 	}
 
-	ctx, cancelFunc := context.WithTimeout(context.Background(), time.Minute*10)
+	ctx, cancelFunc := context.WithTimeout(context.Background(), time.Minute*5)
 	return &GRPCClient{
 		Connection:  connection,
 		CallContext: ctx,

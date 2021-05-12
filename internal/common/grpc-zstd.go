@@ -14,7 +14,7 @@ const ZstdCompressorName = "zstd"
 func init() {
 	c := &zstdCompressor{}
 	c.poolCompressor.New = func() interface{} {
-		zWriter, _ := zstd.NewWriter(ioutil.Discard, zstd.WithWindowSize(512*1024))
+		zWriter, _ := zstd.NewWriter(ioutil.Discard, zstd.WithWindowSize(256*1024))
 		return &writer{Encoder: zWriter, pool: &c.poolCompressor}
 	}
 	encoding.RegisterCompressor(c)
