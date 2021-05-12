@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"sync/atomic"
 	"time"
 
 	pb "github.com/AlexK0/popcorn/internal/api/proto/v1"
@@ -34,6 +35,13 @@ type CompilationServer struct {
 	Stats *CompilationServerStats
 }
 
+func (s *CompilationServer) startCompilationIfPossible(session *ClientSession, dependencies int) {
+	if atomic.AddInt32(&session.CompilationStartDependencies, int32(dependencies)) == 0 {
+		session.CompilationWaitFinish.Add(1)
+		go s.performCompilation(session)
+	}
+}
+
 func (s *CompilationServer) StartCompilationSession(ctx context.Context, in *pb.StartCompilationSessionRequest) (*pb.StartCompilationSessionReply, error) {
 	callObserver := s.Stats.StartCompilationSession.StartRPCCall()
 	sessionID, session := s.ActiveSessions.OpenNewSession(in, s.SessionsDir, s.RemoteClients.GetClient(common.SHA256MessageToSHA256Struct(in.ClientID)))
@@ -58,10 +66,7 @@ func (s *CompilationServer) StartCompilationSession(ctx context.Context, in *pb.
 		requiredFiles = append(requiredFiles, &pb.RequiredFile{FileIndex: uint32(index), Status: pb.RequiredStatus_FULL_COPY_REQUIRED})
 	}
 
-	session.CompilationStartDependencies.Add(len(requiredFiles))
-	session.CompilationWaitFinish.Add(1)
-	go s.performCompilation(session)
-
+	s.startCompilationIfPossible(session, len(requiredFiles))
 	return &pb.StartCompilationSessionReply{
 		SessionID:     sessionID,
 		RequiredFiles: requiredFiles,
@@ -115,7 +120,7 @@ func (s *CompilationServer) TransferFile(stream pb.CompilationService_TransferFi
 		fileMetadata.SHA256Struct = common.SHA256MessageToSHA256Struct(metadata.FileSHA256)
 		session.ClientInfo.FileSHA256Cache.SetFileSHA256(fileMetadata.FilePath, fileMetadata.MTime, fileMetadata.FileSize, fileMetadata.SHA256Struct)
 		if s.SystemHeaders.IsSystemHeader(fileMetadata.FilePath, fileMetadata.FileSize, fileMetadata.SHA256Struct) {
-			session.CompilationStartDependencies.Done()
+			s.startCompilationIfPossible(session, -1)
 			_ = stream.Send(&pb.TransferFileReply{Status: pb.RequiredStatus_DONE})
 			return callObserver.Finish()
 		}
@@ -126,7 +131,7 @@ func (s *CompilationServer) TransferFile(stream pb.CompilationService_TransferFi
 	start := time.Now()
 	for {
 		if s.SrcFileCache.CreateLinkFromCache(fileMetadata.AbsPathInWorkingDir, fileMetadata.SHA256Struct) {
-			session.CompilationStartDependencies.Done()
+			s.startCompilationIfPossible(session, -1)
 			_ = stream.Send(&pb.TransferFileReply{Status: pb.RequiredStatus_DONE})
 			return callObserver.Finish()
 		}
@@ -166,7 +171,7 @@ func (s *CompilationServer) TransferFile(stream pb.CompilationService_TransferFi
 		return clearTmpAndFinish(fmt.Errorf("Can't rename temp file: %v", err))
 	}
 
-	session.CompilationStartDependencies.Done()
+	s.startCompilationIfPossible(session, -1)
 	_ = stream.Send(&pb.TransferFileReply{Status: pb.RequiredStatus_DONE})
 	_, _ = s.SrcFileCache.SaveFileToCache(fileMetadata.AbsPathInWorkingDir, fileMetadata.SHA256Struct, fileMetadata.FileSize)
 
@@ -183,8 +188,6 @@ func (s *CompilationServer) closeSession(session *ClientSession, sessionID uint6
 }
 
 func (s *CompilationServer) performCompilation(session *ClientSession) {
-	session.CompilationStartDependencies.Wait()
-
 	objSHA256 := common.SHA256Struct{}
 	objExtraKey := ""
 	if session.UseObjectCache {
@@ -223,10 +226,14 @@ func (s *CompilationServer) CompileSource(in *pb.CompileSourceRequest, stream pb
 
 	session := s.ActiveSessions.GetSession(in.SessionID)
 	if session == nil {
-		return callObserver.FinishWithError(fmt.Errorf("Unknown SessionID %d", in.SessionID))
+		return callObserver.FinishWithError(fmt.Errorf("Unknown session %d", in.SessionID))
 	}
 
 	defer s.closeSession(session, in.SessionID, in.CloseSessionAfterBuild)
+
+	if waitingFiles := atomic.LoadInt32(&session.CompilationStartDependencies); waitingFiles != 0 {
+		return callObserver.FinishWithError(fmt.Errorf("Session %d is waiting %d files", in.SessionID, waitingFiles))
+	}
 
 	session.CompilationWaitFinish.Wait()
 	if session.CompilerExitCode == 0 {

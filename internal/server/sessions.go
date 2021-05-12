@@ -31,7 +31,7 @@ type ClientSession struct {
 	ClientInfo        *Client
 	RequiredFilesMeta []requiredFileMetadata
 
-	CompilationStartDependencies sync.WaitGroup
+	CompilationStartDependencies int32
 	CompilationWaitFinish        sync.WaitGroup
 
 	CompilerExitCode int
