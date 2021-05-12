@@ -3,6 +3,7 @@ package common
 import (
 	"crypto/sha256"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"net"
@@ -106,7 +107,19 @@ func GetFileSHA256(filePath string) (SHA256Struct, error) {
 	}
 	defer f.Close()
 
+	var headBuffer [70]byte
+	if _, err = f.Read(headBuffer[:]); err != nil && err != io.EOF {
+		return SHA256Struct{}, err
+	}
+
+	file_crc64 := uint64(0)
+	comments_crc64 := uint64(0)
+	if n, _ := fmt.Sscanf(string(headBuffer[:]), "//crc64:%x\n//crc64_with_comments:%x\n", &file_crc64, &comments_crc64); n == 2 {
+		return SHA256Struct{B0_7: file_crc64, B8_15: comments_crc64}, nil
+	}
+
 	hasher := sha256.New()
+	_, _ = hasher.Write(headBuffer[:])
 	if _, err := io.Copy(hasher, f); err != nil {
 		return SHA256Struct{}, err
 	}
