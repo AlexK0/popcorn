@@ -8,7 +8,7 @@ package popcorn;
 service CompilationService {
     // Compilation api
     rpc StartCompilationSession(StartCompilationSessionRequest) returns (StartCompilationSessionReply) {}
-    rpc TransferFile(stream TransferFileIn) returns (stream TransferFileOut) {}
+    rpc TransferFile(stream TransferFileRequest) returns (stream TransferFileReply) {}
     rpc CompileSource (CompileSourceRequest) returns (CompileSourceReply) {}
     rpc CloseSession(CloseSessionRequest) returns (CloseSessionReply) {}
 
@@ -55,7 +55,7 @@ message StartCompilationSessionReply {
     repeated RequiredFile RequiredFiles = 2;
 }
 
-message TransferFileIn {
+message TransferFileRequest {
     message StreamHeader {
         uint64 SessionID = 1;
         uint32 FileIndex = 2;
@@ -67,7 +67,7 @@ message TransferFileIn {
     }
 }
 
-message TransferFileOut {
+message TransferFileReply {
     RequiredStatus status = 1;
 }
 

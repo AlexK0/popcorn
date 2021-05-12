@@ -63,7 +63,7 @@ func transferFileByChunks(path string, stream pb.CompilationService_TransferFile
 		if err != nil {
 			return fmt.Errorf("Can't read file %q: %v", path, err)
 		}
-		if err = stream.Send(&pb.TransferFileIn{Chunk: &pb.TransferFileIn_FileBodyChunk{FileBodyChunk: buffer[:n]}}); err != nil {
+		if err = stream.Send(&pb.TransferFileRequest{Chunk: &pb.TransferFileRequest_FileBodyChunk{FileBodyChunk: buffer[:n]}}); err != nil {
 			return fmt.Errorf("Can't transfer file %q: %v", path, err)
 		}
 		if n == 0 {
@@ -89,9 +89,9 @@ func (compiler *RemoteCompiler) transferFile(path string, index uint32, sha256Re
 		return
 	}
 
-	err = stream.Send(&pb.TransferFileIn{
-		Chunk: &pb.TransferFileIn_Header{
-			Header: &pb.TransferFileIn_StreamHeader{
+	err = stream.Send(&pb.TransferFileRequest{
+		Chunk: &pb.TransferFileRequest_Header{
+			Header: &pb.TransferFileRequest_StreamHeader{
 				SessionID:  compiler.sessionID,
 				FileIndex:  index,
 				FileSHA256: fileSHA256Message,

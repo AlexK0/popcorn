@@ -112,7 +112,7 @@ func (s *CompilationServer) TransferFile(stream pb.CompilationService_TransferFi
 		fileMetadata.SHA256Struct = common.SHA256MessageToSHA256Struct(metadata.FileSHA256)
 		session.ClientInfo.FileSHA256Cache.SetFileSHA256(fileMetadata.FilePath, fileMetadata.MTime, fileMetadata.FileSize, fileMetadata.SHA256Struct)
 		if s.SystemHeaders.IsSystemHeader(fileMetadata.FilePath, fileMetadata.FileSize, fileMetadata.SHA256Struct) {
-			_ = stream.Send(&pb.TransferFileOut{Status: pb.RequiredStatus_DONE})
+			_ = stream.Send(&pb.TransferFileReply{Status: pb.RequiredStatus_DONE})
 			return callObserver.Finish()
 		}
 	} else if fileMetadata.SHA256Struct.IsEmpty() {
@@ -122,17 +122,17 @@ func (s *CompilationServer) TransferFile(stream pb.CompilationService_TransferFi
 	start := time.Now()
 	for {
 		if s.SrcFileCache.CreateLinkFromCache(fileMetadata.AbsPathInWorkingDir, fileMetadata.SHA256Struct) {
-			_ = stream.Send(&pb.TransferFileOut{Status: pb.RequiredStatus_DONE})
+			_ = stream.Send(&pb.TransferFileReply{Status: pb.RequiredStatus_DONE})
 			return callObserver.Finish()
 		}
 		if s.UploadingFiles.StartFileTransfer(fileMetadata.FilePath, fileMetadata.SHA256Struct) {
-			_ = stream.Send(&pb.TransferFileOut{Status: pb.RequiredStatus_FULL_COPY_REQUIRED})
+			_ = stream.Send(&pb.TransferFileReply{Status: pb.RequiredStatus_FULL_COPY_REQUIRED})
 			break
 		}
 		// TODO Why 6 seconds?
 		if time.Since(start) > 6*time.Second {
 			s.UploadingFiles.ForceStartFileTransfer(fileMetadata.FilePath, fileMetadata.SHA256Struct)
-			_ = stream.Send(&pb.TransferFileOut{Status: pb.RequiredStatus_FULL_COPY_REQUIRED})
+			_ = stream.Send(&pb.TransferFileReply{Status: pb.RequiredStatus_FULL_COPY_REQUIRED})
 			break
 		}
 		// TODO Why 100 milliseconds?
@@ -161,7 +161,7 @@ func (s *CompilationServer) TransferFile(stream pb.CompilationService_TransferFi
 		return clearTmpAndFinish(fmt.Errorf("Can't rename temp file: %v", err))
 	}
 
-	_ = stream.Send(&pb.TransferFileOut{Status: pb.RequiredStatus_DONE})
+	_ = stream.Send(&pb.TransferFileReply{Status: pb.RequiredStatus_DONE})
 	_, _ = s.SrcFileCache.SaveFileToCache(fileMetadata.AbsPathInWorkingDir, fileMetadata.SHA256Struct, fileMetadata.FileSize)
 
 	s.Stats.TransferredFiles.Increment()

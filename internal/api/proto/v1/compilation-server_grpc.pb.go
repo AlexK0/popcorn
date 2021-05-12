@@ -54,8 +54,8 @@ func (c *compilationServiceClient) TransferFile(ctx context.Context, opts ...grp
 }
 
 type CompilationService_TransferFileClient interface {
-	Send(*TransferFileIn) error
-	Recv() (*TransferFileOut, error)
+	Send(*TransferFileRequest) error
+	Recv() (*TransferFileReply, error)
 	grpc.ClientStream
 }
 
@@ -63,12 +63,12 @@ type compilationServiceTransferFileClient struct {
 	grpc.ClientStream
 }
 
-func (x *compilationServiceTransferFileClient) Send(m *TransferFileIn) error {
+func (x *compilationServiceTransferFileClient) Send(m *TransferFileRequest) error {
 	return x.ClientStream.SendMsg(m)
 }
 
-func (x *compilationServiceTransferFileClient) Recv() (*TransferFileOut, error) {
-	m := new(TransferFileOut)
+func (x *compilationServiceTransferFileClient) Recv() (*TransferFileReply, error) {
+	m := new(TransferFileReply)
 	if err := x.ClientStream.RecvMsg(m); err != nil {
 		return nil, err
 	}
@@ -171,8 +171,8 @@ func _CompilationService_TransferFile_Handler(srv interface{}, stream grpc.Serve
 }
 
 type CompilationService_TransferFileServer interface {
-	Send(*TransferFileOut) error
-	Recv() (*TransferFileIn, error)
+	Send(*TransferFileReply) error
+	Recv() (*TransferFileRequest, error)
 	grpc.ServerStream
 }
 
@@ -180,12 +180,12 @@ type compilationServiceTransferFileServer struct {
 	grpc.ServerStream
 }
 
-func (x *compilationServiceTransferFileServer) Send(m *TransferFileOut) error {
+func (x *compilationServiceTransferFileServer) Send(m *TransferFileReply) error {
 	return x.ServerStream.SendMsg(m)
 }
 
-func (x *compilationServiceTransferFileServer) Recv() (*TransferFileIn, error) {
-	m := new(TransferFileIn)
+func (x *compilationServiceTransferFileServer) Recv() (*TransferFileRequest, error) {
+	m := new(TransferFileRequest)
 	if err := x.ServerStream.RecvMsg(m); err != nil {
 		return nil, err
 	}
