@@ -74,6 +74,9 @@ func (session *ClientSession) getPathInWorkingDir(filePathOnClientFileSystem str
 	}
 	relative = strings.TrimLeft(filePathOnClientFileSystem, "/")
 	absolute = path.Join(session.WorkingDir, relative)
+	if len(relative) == 0 {
+		relative = "."
+	}
 	return
 }
 
@@ -81,11 +84,11 @@ func (session *ClientSession) RemoveUnusedIncludeDirsAndGetCompilerArgs() []stri
 	compilerArgs := make([]string, 0, len(session.compilerArgs))
 	for i := 0; i < len(session.compilerArgs); i++ {
 		arg := session.compilerArgs[i]
-		if (arg == "-I" || arg == "-isystem" || arg == "-iquote") && i+1 < len(session.compilerArgs) {
+		if (arg == "-I" || arg == "-isystem" || arg == "-iquote" || arg == "-include") && i+1 < len(session.compilerArgs) {
 			i++
-			includeDirRel, includeDirAbs := session.getPathInWorkingDir(session.compilerArgs[i])
-			if _, err := os.Stat(includeDirAbs); !os.IsNotExist(err) {
-				compilerArgs = append(compilerArgs, arg, includeDirRel)
+			includeRel, includeAbs := session.getPathInWorkingDir(session.compilerArgs[i])
+			if _, err := os.Stat(includeAbs); !os.IsNotExist(err) {
+				compilerArgs = append(compilerArgs, arg, includeRel)
 			}
 			continue
 		}

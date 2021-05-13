@@ -3,6 +3,7 @@ package client
 import (
 	"bufio"
 	"bytes"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -12,14 +13,19 @@ import (
 
 // LocalCompiler ...
 type LocalCompiler struct {
-	name                     string
-	inFile                   string
-	outFile                  string
-	remoteCmdArgs            []string
-	dirsIquote               []string
-	dirsI                    []string
-	dirsIsystem              []string
-	localCmdArgs             []string
+	name    string
+	inFile  string
+	outFile string
+
+	precompiledHeaders []string
+
+	remoteCmdArgs []string
+	localCmdArgs  []string
+
+	dirsIquote  []string
+	dirsI       []string
+	dirsIsystem []string
+
 	RemoteCompilationAllowed bool
 }
 
@@ -34,6 +40,28 @@ func MakeLocalCompiler(compilerArgs []string) *LocalCompiler {
 	compiler.dirsIquote = make([]string, 0, 2)
 	compiler.dirsI = make([]string, 0, 2)
 	compiler.dirsIsystem = make([]string, 0, 2)
+
+	parseArg := func(key string, arg string, argIndex *int, appendTo *[]string, addKey bool) bool {
+		if arg == key {
+			if *argIndex+1 < len(compilerArgs) {
+				if addKey {
+					*appendTo = append(*appendTo, key)
+				}
+				*appendTo = append(*appendTo, compilerArgs[*argIndex+1])
+				*argIndex++
+				return true
+			} else {
+				remoteCompilationAllowed = false
+			}
+		} else if strings.HasPrefix(arg, key) {
+			if addKey {
+				*appendTo = append(*appendTo, key)
+			}
+			*appendTo = append(*appendTo, arg[len(key):])
+			return true
+		}
+		return false
+	}
 
 	for i := 1; i < len(compilerArgs); i++ {
 		arg := compilerArgs[i]
@@ -56,45 +84,27 @@ func MakeLocalCompiler(compilerArgs []string) *LocalCompiler {
 				// TODO think about it
 				strings.HasPrefix(arg, "-idirafter") || strings.HasPrefix(arg, "--sysroot") || strings.HasPrefix(arg, "-isysroot") {
 				remoteCompilationAllowed = false
-			} else if arg == "-I" {
-				if i+1 < len(compilerArgs) {
-					compiler.dirsI = append(compiler.dirsI, compilerArgs[i+1])
-					i++
-					continue
-				} else {
-					remoteCompilationAllowed = false
-				}
-			} else if strings.HasPrefix(arg, "-I") {
-				compiler.dirsI = append(compiler.dirsI, arg[2:])
+			} else if parseArg("-I", arg, &i, &compiler.dirsI, false) ||
+				parseArg("-iquote", arg, &i, &compiler.dirsIquote, false) ||
+				parseArg("-isystem", arg, &i, &compiler.dirsIsystem, false) {
 				continue
-			} else if arg == "-iquote" {
-				if i+1 < len(compilerArgs) {
-					compiler.dirsIquote = append(compiler.dirsIquote, compilerArgs[i+1])
-					i++
-					continue
-				} else {
-					remoteCompilationAllowed = false
+			} else if parseArg("-include", arg, &i, &compiler.remoteCmdArgs, true) {
+				includeFile := common.NormalizePath(compiler.remoteCmdArgs[len(compiler.remoteCmdArgs)-1])
+				compiler.remoteCmdArgs[len(compiler.remoteCmdArgs)-1] = includeFile
+				for _, suffix := range []string{".gch", ".pch"} {
+					precompiledHeader := includeFile + suffix
+					if _, err := os.Stat(precompiledHeader); !os.IsNotExist(err) {
+						compiler.precompiledHeaders = append(compiler.precompiledHeaders, precompiledHeader)
+						break
+					}
 				}
-			} else if strings.HasPrefix(arg, "-iquote") {
-				compiler.dirsIquote = append(compiler.dirsIquote, arg[7:])
-				continue
-			} else if arg == "-isystem" {
-				if i+1 < len(compilerArgs) {
-					compiler.dirsIsystem = append(compiler.dirsIsystem, compilerArgs[i+1])
-					i++
-					continue
-				} else {
-					remoteCompilationAllowed = false
-				}
-			} else if strings.HasPrefix(arg, "-isystem") {
-				compiler.dirsIsystem = append(compiler.dirsIsystem, arg[8:])
 				continue
 			}
 		} else if isSourceFile(arg) {
 			if len(compiler.inFile) != 0 {
 				remoteCompilationAllowed = false
 			}
-			compiler.inFile, _ = filepath.Abs(arg)
+			compiler.inFile = common.NormalizePath(arg)
 			continue
 		}
 		compiler.remoteCmdArgs = append(compiler.remoteCmdArgs, arg)
@@ -194,7 +204,8 @@ func (compiler *LocalCompiler) CollectFilesAndUpdateIncludeDirs() ([]string, err
 	}
 
 	compiler.addIncludeDirsFrom(compilerStderr.String())
-	return append(extractHeaders(compilerStdout.Bytes()), compiler.inFile), nil
+	filers := append(extractHeaders(compilerStdout.Bytes()), compiler.inFile)
+	return append(filers, compiler.precompiledHeaders...), nil
 }
 
 func (compiler *LocalCompiler) CompileLocally() (retCode int, stdout []byte, stderr []byte) {

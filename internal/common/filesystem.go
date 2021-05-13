@@ -30,19 +30,23 @@ func WriteFile(fullPath string, fileContent []byte) error {
 	return os.Rename(tmpFile.Name(), fullPath)
 }
 
-// NormalizePaths ...
+func NormalizePath(path string) string {
+	newPath, err := filepath.EvalSymlinks(path)
+	if err == nil {
+		path = newPath
+	}
+	newPath, err = filepath.Abs(path)
+	if err == nil {
+		path = newPath
+	}
+	return path
+}
+
 func NormalizePaths(paths []string) []string {
 	usedPaths := make(map[string]bool, len(paths))
 	result := make([]string, 0, len(paths))
 	for _, path := range paths {
-		newPath, err := filepath.EvalSymlinks(path)
-		if err == nil {
-			path = newPath
-		}
-		newPath, err = filepath.Abs(path)
-		if err == nil {
-			path = newPath
-		}
+		path = NormalizePath(path)
 		if !usedPaths[path] {
 			result = append(result, path)
 			usedPaths[path] = true
