@@ -261,7 +261,7 @@ func (s *CompilationServer) CompileSource(in *pb.CompileSourceRequest, stream pb
 				CompilerStderr:  session.CompilerStderr,
 			},
 		}})
-	return nil
+	return callObserver.Finish()
 }
 
 func (s *CompilationServer) CloseSession(ctx context.Context, in *pb.CloseSessionRequest) (*pb.CloseSessionReply, error) {
