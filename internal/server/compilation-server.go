@@ -144,6 +144,7 @@ func (s *CompilationServer) TransferFile(stream pb.CompilationService_TransferFi
 		if time.Since(start) > 6*time.Second {
 			s.UploadingFiles.ForceStartFileTransfer(fileMetadata.FilePath, fileMetadata.SHA256Struct)
 			_ = stream.Send(&pb.TransferFileReply{Status: pb.RequiredStatus_FULL_COPY_REQUIRED})
+			s.Stats.ForceFileTransferring.Increment()
 			break
 		}
 		// TODO Why 100 milliseconds?

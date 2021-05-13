@@ -63,7 +63,8 @@ func (o RPCCallObserver) FinishWithError(err error) error {
 }
 
 type CompilationServerStats struct {
-	TransferredFiles AtomicStat
+	TransferredFiles      AtomicStat
+	ForceFileTransferring AtomicStat
 
 	StartCompilationSession RPCCallStats
 	TransferFile            RPCCallStats
@@ -127,6 +128,7 @@ func (cs *CompilationServerStats) feedBufferWithStats(compilationServer *Compila
 
 	cs.writeStat("transferring_files.in_progress", compilationServer.UploadingFiles.TransferringFilesCount())
 	cs.writeAtomicStat("transferring_files.received", &cs.TransferredFiles)
+	cs.writeAtomicStat("transferring_files.force", &cs.ForceFileTransferring)
 
 	cs.writeRPCCallStat("start_compilation_session", &cs.StartCompilationSession)
 	cs.writeRPCCallStat("transfer_file", &cs.TransferFile)
