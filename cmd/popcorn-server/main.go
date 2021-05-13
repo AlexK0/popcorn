@@ -84,7 +84,7 @@ func main() {
 		common.LogFatal("Failed to init src file cache:", err)
 	}
 
-	grpcServer := grpc.NewServer(grpc.MaxRecvMsgSize(1024*1204*1024), grpc.MaxSendMsgSize(1024*1204*1024))
+	grpcServer := grpc.NewServer()
 	compilationServer := &server.CompilationServer{
 		StartTime:   time.Now(),
 		SessionsDir: path.Join(settings.WorkingDir, "sessions"),

@@ -26,10 +26,7 @@ func MakeGRPCClient(serverHostPort string) (*GRPCClient, error) {
 		serverHostPort,
 		grpc.WithInsecure(),
 		grpc.WithBlock(),
-		grpc.WithDefaultCallOptions(
-			grpc.UseCompressor(common.ZstdCompressorName),
-			grpc.MaxCallRecvMsgSize(1024*1204*1024),
-			grpc.MaxCallSendMsgSize(1024*1204*1024)))
+		grpc.WithDefaultCallOptions(grpc.UseCompressor(common.ZstdCompressorName)))
 	if err != nil {
 		return nil, err
 	}

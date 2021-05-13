@@ -58,7 +58,7 @@ func TransferFileByChunks(path string, transferCallback func(chunk []byte) error
 	}
 	defer file.Close()
 
-	var buffer [128 * 1024]byte
+	var buffer [32 * 1024]byte
 	for {
 		n, err := file.Read(buffer[:])
 		if err == io.EOF {
