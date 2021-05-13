@@ -95,10 +95,13 @@ message CloseSessionRequest {
 message CloseSessionReply {
 }
 
-message StatusRequest {}
+message StatusRequest {
+    string CheckCompiler = 1;
+}
 
 message StatusReply {
     string ServerVersion = 1;
     repeated string ServerArgs = 2;
-    bytes ServerStats = 3;
+    int64 ServerUptime = 3;
+    string CompilerVersion = 4;
 }

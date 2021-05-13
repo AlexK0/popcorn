@@ -14,6 +14,7 @@ func main() {
 	runtime.GOMAXPROCS(2)
 	version := flag.Bool("version", false, "Show version and exit.")
 	checkServers := flag.Bool("check-servers", false, "Check servers status.")
+	checkCompiler := flag.String("compiler", "gcc", "Check if the compiler available on the servers.")
 
 	flag.Parse()
 
@@ -28,7 +29,7 @@ func main() {
 	}
 
 	if *checkServers {
-		client.CheckServers(settings, false)
+		client.CheckServers(settings, *checkCompiler)
 		os.Exit(0)
 	}
 

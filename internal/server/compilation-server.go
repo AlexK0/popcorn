@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -273,9 +274,21 @@ func (s *CompilationServer) CloseSession(ctx context.Context, in *pb.CloseSessio
 }
 
 func (s *CompilationServer) Status(ctx context.Context, in *pb.StatusRequest) (*pb.StatusReply, error) {
+	rawOut, _ := exec.Command(in.CheckCompiler, "-v").CombinedOutput()
+
+	versionLine := "unknown"
+	for _, line := range strings.Split(string(rawOut), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.Contains(line, " version ") {
+			versionLine = line
+			break
+		}
+	}
+
 	return &pb.StatusReply{
-		ServerVersion: common.GetVersion(),
-		ServerArgs:    os.Args,
-		ServerStats:   s.Stats.GetStatsRawBytes(s),
+		ServerVersion:   common.GetVersion(),
+		ServerArgs:      os.Args,
+		ServerUptime:    int64(time.Since(s.StartTime)),
+		CompilerVersion: versionLine,
 	}, nil
 }
