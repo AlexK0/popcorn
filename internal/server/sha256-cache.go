@@ -17,25 +17,25 @@ type FileSHA256Cache struct {
 	mu    sync.RWMutex
 }
 
-func (headerCache *FileSHA256Cache) GetFileSHA256(headerPath string, headerMTime int64, fileSize int64) (common.SHA256Struct, bool) {
-	headerCache.mu.RLock()
-	meta, ok := headerCache.table[headerPath]
-	headerCache.mu.RUnlock()
+func (cache *FileSHA256Cache) GetFileSHA256(headerPath string, headerMTime int64, fileSize int64) (common.SHA256Struct, bool) {
+	cache.mu.RLock()
+	meta, ok := cache.table[headerPath]
+	cache.mu.RUnlock()
 	if meta.mtime != headerMTime || meta.fileSize != fileSize {
 		return common.SHA256Struct{}, false
 	}
 	return meta.SHA256Struct, ok
 }
 
-func (headerCache *FileSHA256Cache) SetFileSHA256(headerPath string, headerMTime int64, fileSize int64, sha256sum common.SHA256Struct) {
-	headerCache.mu.Lock()
-	headerCache.table[headerPath] = fileMeta{sha256sum, headerMTime, fileSize}
-	headerCache.mu.Unlock()
+func (cache *FileSHA256Cache) SetFileSHA256(headerPath string, headerMTime int64, fileSize int64, sha256sum common.SHA256Struct) {
+	cache.mu.Lock()
+	cache.table[headerPath] = fileMeta{sha256sum, headerMTime, fileSize}
+	cache.mu.Unlock()
 }
 
-func (headerCache *FileSHA256Cache) Count() int64 {
-	headerCache.mu.RLock()
-	elements := len(headerCache.table)
-	headerCache.mu.RUnlock()
+func (cache *FileSHA256Cache) Count() int64 {
+	cache.mu.RLock()
+	elements := len(cache.table)
+	cache.mu.RUnlock()
 	return int64(elements)
 }
